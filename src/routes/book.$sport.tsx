@@ -99,11 +99,12 @@ function BookingPage() {
   const [date, setDate] = useState(todayIso);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
-  // upcoming hour helper for today (venue-local time)
+  // Earliest bookable start hour for a date (venue-local time). For today this
+  // is the *current* hour, so a customer can book "from now" instead of being
+  // forced to the next hour. Future dates default to 7 PM.
   function upcomingHourFor(iso: string) {
     if (iso !== todayIsoIST()) return 19;
-    const nowH = currentHourIST() + 1;
-    return Math.min(CLOSE_HOUR - 1, Math.max(OPEN_HOUR, nowH));
+    return Math.min(CLOSE_HOUR - 1, Math.max(OPEN_HOUR, currentHourIST()));
   }
 
   const [startHour, setStartHour] = useState(() => {
@@ -215,6 +216,7 @@ function BookingPage() {
 
   const days = useMemo(() => upcomingDaysIST(21), []);
   const minStart = upcomingHourFor(date);
+  const nowHourToday = date === todayIsoIST() ? currentHourIST() : -1;
   const isOnHold = hold?.onHold === true;
 
   function continueFromTime() {
@@ -417,7 +419,7 @@ function BookingPage() {
                   {timeOptions.slice(0, -1).map((h) => (
                     <option key={h} value={h} disabled={h < minStart}>
                       {formatHour(h)}
-                      {h < minStart ? " (past)" : ""}
+                      {h < minStart ? " (past)" : h === nowHourToday ? " (now)" : ""}
                     </option>
                   ))}
                 </select>

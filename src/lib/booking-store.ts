@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
@@ -254,6 +255,39 @@ export async function getAdminInquiries() {
   const db = await getFirebaseDb();
   const snapshot = await getDocs(query(collection(db, "functionInquiries"), limit(300)));
   return snapshot.docs.map(mapInquiry).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
+ * Live admin feed of sports bookings — fires immediately with the current data
+ * and again on every change, so the dashboard updates the moment a customer
+ * books or submits payment (no refresh). Returns the unsubscribe function.
+ */
+export async function subscribeAdminBookings(
+  cb: (bookings: SportsBooking[]) => void,
+  onError?: (error: Error) => void,
+) {
+  const db = await getFirebaseDb();
+  return onSnapshot(
+    query(collection(db, "sportsBookings"), limit(300)),
+    (snapshot) => {
+      cb(snapshot.docs.map(mapBooking).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    },
+    (error) => onError?.(error),
+  );
+}
+
+export async function subscribeAdminInquiries(
+  cb: (inquiries: FunctionInquiry[]) => void,
+  onError?: (error: Error) => void,
+) {
+  const db = await getFirebaseDb();
+  return onSnapshot(
+    query(collection(db, "functionInquiries"), limit(300)),
+    (snapshot) => {
+      cb(snapshot.docs.map(mapInquiry).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    },
+    (error) => onError?.(error),
+  );
 }
 
 export async function updateBookingStatus(bookingId: string, status: BookingStatus) {

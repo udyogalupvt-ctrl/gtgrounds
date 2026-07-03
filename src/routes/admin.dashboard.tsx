@@ -23,10 +23,10 @@ import {
 } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
-  getAdminBookings,
-  getAdminInquiries,
   getPaymentSettings,
   savePaymentSettings,
+  subscribeAdminBookings,
+  subscribeAdminInquiries,
   updateBookingStatus,
   type BookingStatus,
   type FunctionInquiry,
@@ -146,9 +146,24 @@ function AdminDashboard() {
     setIsAdmin(isAdminEmail(session.email));
   }, [session]);
 
+  // Live bookings & inquiries — update the dashboard the instant a customer
+  // books or submits payment, no refresh needed. Gallery/announcements are
+  // static enough to load once (and after admin edits).
   useEffect(() => {
     if (!isAdmin) return;
-    load();
+    loadContent();
+    let unsubBookings: undefined | (() => void);
+    let unsubInquiries: undefined | (() => void);
+    subscribeAdminBookings(setBookings, (e) => toast.error(e.message)).then((fn) => {
+      unsubBookings = fn;
+    });
+    subscribeAdminInquiries(setInquiries).then((fn) => {
+      unsubInquiries = fn;
+    });
+    return () => {
+      unsubBookings?.();
+      unsubInquiries?.();
+    };
   }, [isAdmin]);
 
   // If this browser already granted notification permission, silently refresh
@@ -236,16 +251,9 @@ function AdminDashboard() {
     return () => unsub?.();
   }, [activeThread]);
 
-  async function load() {
+  async function loadContent() {
     try {
-      const [b, i, g, a] = await Promise.all([
-        getAdminBookings(),
-        getAdminInquiries(),
-        getPublicGalleryItems(),
-        getAdminAnnouncements(),
-      ]);
-      setBookings(b);
-      setInquiries(i);
+      const [g, a] = await Promise.all([getPublicGalleryItems(), getAdminAnnouncements()]);
       setGalleryItems(g);
       setAnnouncements(a);
     } catch (error) {
@@ -285,7 +293,7 @@ function AdminDashboard() {
     try {
       await updateBookingStatus(id, status);
       toast.success(`Marked ${statusLabel(status)}`);
-      load();
+      // The live subscription reflects the change automatically.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update status");
     }
@@ -327,7 +335,7 @@ function AdminDashboard() {
       setGalleryUrl("");
       setGalleryType("image");
       toast.success("Gallery updated");
-      load();
+      loadContent();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save gallery item");
     }
@@ -337,7 +345,7 @@ function AdminDashboard() {
     try {
       await deleteGalleryItem(id);
       toast.success("Removed from gallery");
-      load();
+      loadContent();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete gallery item");
     }
@@ -363,7 +371,7 @@ function AdminDashboard() {
       setAnnouncementPriority("normal");
       setAnnouncementExpiresAt("");
       toast.success("Announcement published");
-      load();
+      loadContent();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not publish announcement");
     } finally {
@@ -375,7 +383,7 @@ function AdminDashboard() {
     try {
       await setAnnouncementActive(item.id, !item.active);
       toast.success(item.active ? "Announcement hidden" : "Announcement live");
-      load();
+      loadContent();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update announcement");
     }
@@ -385,7 +393,7 @@ function AdminDashboard() {
     try {
       await deleteAnnouncement(id);
       toast.success("Announcement deleted");
-      load();
+      loadContent();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete announcement");
     }
