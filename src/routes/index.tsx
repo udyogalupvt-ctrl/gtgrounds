@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
+  Lock,
   MapPin,
   Phone,
   Sparkles,
@@ -14,8 +15,9 @@ import {
 } from "lucide-react";
 import { TopNav } from "@/components/site/TopNav";
 import { BottomNav } from "@/components/site/BottomNav";
-import { SPORTS, SPORT_PRICES, formatHour, formatINR } from "@/lib/venue";
+import { SPORTS, formatHour, formatINR } from "@/lib/venue";
 import { getPublicAnnouncements, type Announcement } from "@/lib/content-store";
+import { defaultVenueConfig, getVenueConfig, type VenueConfig } from "@/lib/venue-config-store";
 import {
   Accordion,
   AccordionContent,
@@ -54,9 +56,18 @@ function LandingPage() {
   const [quickSport, setQuickSport] = useState<keyof typeof SPORTS>("box_cricket");
   const [quickStart, setQuickStart] = useState(19);
   const [quickEnd, setQuickEnd] = useState(21);
-  const quickIsValid = quickEnd > quickStart;
-  const quickHours = quickIsValid ? quickEnd - quickStart : 0;
-  const quickTotal = quickHours * SPORT_PRICES[quickSport];
+  const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
+
+  useEffect(() => {
+    getVenueConfig()
+      .then(setVenue)
+      .catch(() => {});
+  }, []);
+
+  const quickHeld = venue.holds[quickSport]?.onHold === true;
+  const quickIsValid = quickEnd > quickStart && !quickHeld;
+  const quickHours = quickEnd > quickStart ? quickEnd - quickStart : 0;
+  const quickTotal = quickHours * venue.prices[quickSport];
 
   return (
     <div className="bg-white text-prime">
@@ -142,11 +153,17 @@ function LandingPage() {
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-xl font-bold">{sport.name}</h3>
                 <p className="mb-3 truncate text-xs text-white/50">{sport.tagline}</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-sport px-2 py-1 text-[10px] font-black text-sport-foreground">
-                    {formatINR(SPORT_PRICES[sport.slug])}/hr
+                    {formatINR(venue.prices[sport.slug])}/hr
                   </span>
-                  <span className="text-[10px] text-white/40">Starting from</span>
+                  {venue.holds[sport.slug]?.onHold ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-amber-400/90 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-950">
+                      <Lock className="h-3 w-3" /> On hold
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-white/40">Starting from</span>
+                  )}
                 </div>
               </div>
               <span className="grid size-12 shrink-0 place-items-center rounded-full border border-white/20 text-white transition-transform group-hover:translate-x-1">
@@ -221,11 +238,22 @@ function LandingPage() {
               </select>
             </label>
           </div>
+          {quickHeld && (
+            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+              <Lock className="h-4 w-4 shrink-0" />
+              {venue.holds[quickSport]?.reason?.trim() ||
+                `${SPORTS[quickSport].name} bookings are on hold right now.`}
+            </div>
+          )}
           <div className="flex items-center justify-between rounded-2xl bg-prime p-4 text-white">
             <div>
               <p className="text-[10px] font-bold text-white/50">TOTAL AMOUNT</p>
               <p className="text-xl font-black italic">
-                {quickIsValid ? formatINR(quickTotal) : "Select range"}
+                {quickHeld
+                  ? "On hold"
+                  : quickEnd > quickStart
+                    ? formatINR(quickTotal)
+                    : "Select range"}
               </p>
             </div>
             <button

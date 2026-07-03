@@ -77,6 +77,33 @@ function getServiceAccount(): ServiceAccount | null {
   }
 }
 
+// Google endpoints occasionally drop a connection ("fetch failed" with no HTTP
+// response) from serverless/SSR runtimes. Retry transient network failures with
+// a short backoff and a hard timeout so a single flaky socket doesn't silently
+// swallow an admin notification.
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  { retries = 3, timeoutMs = 10_000 }: { retries?: number; timeoutMs?: number } = {},
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 
 async function getAccessToken(sa: ServiceAccount): Promise<string> {
@@ -98,7 +125,7 @@ async function getAccessToken(sa: ServiceAccount): Promise<string> {
   signer.update(unsigned);
   const assertion = `${unsigned}.${signer.sign(sa.private_key).toString("base64url")}`;
 
-  const response = await fetch(sa.token_uri, {
+  const response = await fetchWithRetry(sa.token_uri, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -124,9 +151,10 @@ async function listAdminTokens(
   sa: ServiceAccount,
   accessToken: string,
 ): Promise<{ token: string; docName: string }[]> {
-  const response = await fetch(`${FIRESTORE_BASE(sa.project_id)}/adminPushTokens?pageSize=300`, {
-    headers: { authorization: `Bearer ${accessToken}` },
-  });
+  const response = await fetchWithRetry(
+    `${FIRESTORE_BASE(sa.project_id)}/adminPushTokens?pageSize=300`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+  );
   if (!response.ok) {
     throw new Error(`Could not list admin push tokens (HTTP ${response.status}).`);
   }
@@ -154,7 +182,7 @@ async function sendPush(
   target: { token: string; docName: string },
   message: { title: string; body: string; tag: string },
 ): Promise<boolean> {
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
     {
       method: "POST",
@@ -216,6 +244,9 @@ export const notifyAdmins = createServerFn({ method: "POST" })
       return { sent, failed: results.length - sent };
     } catch (error) {
       console.error("[admin-notify]", error);
+      if (error instanceof Error && error.cause) {
+        console.error("[admin-notify] cause:", error.cause);
+      }
       return { sent: 0, failed: 0 };
     }
   });

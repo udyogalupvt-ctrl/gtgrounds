@@ -65,7 +65,25 @@ import {
   signOutFirebase,
 } from "@/lib/firebase";
 import { enableAdminPushNotifications } from "@/lib/push-notifications";
-import { SPORTS, formatHour, formatINR, statusColor, statusLabel } from "@/lib/venue";
+import {
+  getVenueConfig,
+  saveVenueConfig,
+  defaultVenueConfig,
+  type VenueConfig,
+} from "@/lib/venue-config-store";
+import { buildUpiUri, generateUpiQr } from "@/lib/upi";
+import {
+  SPORTS,
+  SportSlug,
+  formatDateFull,
+  formatDateLong,
+  formatDateShort,
+  formatHour,
+  formatINR,
+  statusColor,
+  statusLabel,
+  todayIsoIST,
+} from "@/lib/venue";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({ meta: [{ title: "Admin — GT Grounds" }] }),
@@ -80,7 +98,7 @@ function AdminDashboard() {
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [tab, setTab] = useState<
-    "sports" | "events" | "gallery" | "announcements" | "chats" | "rewards" | "payment"
+    "sports" | "events" | "gallery" | "announcements" | "chats" | "rewards" | "payment" | "pricing"
   >("sports");
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
   const [inquiries, setInquiries] = useState<FunctionInquiry[]>([]);
@@ -108,6 +126,9 @@ function AdminDashboard() {
   const [payment, setPayment] = useState<PaymentSettings | null>(null);
   const [savingPayment, setSavingPayment] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
+  const [savingVenue, setSavingVenue] = useState(false);
+  const [adminQrPreview, setAdminQrPreview] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribe: undefined | (() => void);
@@ -169,9 +190,39 @@ function AdminDashboard() {
     getPaymentSettings()
       .then(setPayment)
       .catch(() => {});
+    getVenueConfig()
+      .then(setVenue)
+      .catch(() => {});
 
     return () => unsub?.();
   }, [isAdmin]);
+
+  // Live QR preview for the admin (no amount — a generic "pay us" code).
+  useEffect(() => {
+    if (!payment?.upiId) {
+      setAdminQrPreview(null);
+      return;
+    }
+    let active = true;
+    generateUpiQr(buildUpiUri({ upiId: payment.upiId, upiName: payment.upiName || "GT Grounds" }))
+      .then((url) => active && setAdminQrPreview(url))
+      .catch(() => active && setAdminQrPreview(null));
+    return () => {
+      active = false;
+    };
+  }, [payment?.upiId, payment?.upiName]);
+
+  async function saveVenue() {
+    setSavingVenue(true);
+    try {
+      await saveVenueConfig(venue);
+      toast.success("Pricing & availability saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSavingVenue(false);
+    }
+  }
 
   useEffect(() => {
     if (!activeThread) {
@@ -342,7 +393,7 @@ function AdminDashboard() {
 
   function whatsappLink(b: SportsBooking) {
     const msg = `Hi ${b.customerName}! ✅ Your booking at Jilani's GT Grounds is CONFIRMED.
-📅 ${new Date(b.bookingDate).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+📅 ${formatDateLong(b.bookingDate)}
 ⏰ ${formatHour(b.startHour)} – ${formatHour(b.endHour)}
 🏟️ ${SPORTS[b.sport].name}
 💳 Payment: Received (${formatINR(b.totalAmount)})
@@ -353,7 +404,7 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
   }
 
   const stats = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoIST();
     const todays = bookings.filter((b) => b.bookingDate === today);
     const revenue = bookings
       .filter((b) => b.status === "approved" || b.status === "completed")
@@ -496,7 +547,16 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
 
         <div className="mt-8 flex gap-2 overflow-x-auto border-b border-black/5">
           {(
-            ["sports", "events", "chats", "gallery", "announcements", "payment", "rewards"] as const
+            [
+              "sports",
+              "events",
+              "chats",
+              "gallery",
+              "announcements",
+              "pricing",
+              "payment",
+              "rewards",
+            ] as const
           ).map((t) => (
             <button
               key={t}
@@ -513,9 +573,11 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                       ? "Chats"
                       : t === "rewards"
                         ? "Rewards"
-                        : t === "payment"
-                          ? "Payment"
-                          : "Announcements"}
+                        : t === "pricing"
+                          ? "Pricing & Holds"
+                          : t === "payment"
+                            ? "Payment"
+                            : "Announcements"}
               {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-prime" />}
             </button>
           ))}
@@ -566,12 +628,8 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                         {b.customerName} · <span className="text-black/50">{b.customerPhone}</span>
                       </p>
                       <p className="mt-0.5 text-sm text-black/60">
-                        {SPORTS[b.sport].name} ·{" "}
-                        {new Date(b.bookingDate).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                        })}{" "}
-                        · {formatHour(b.startHour)}–{formatHour(b.endHour)}
+                        {SPORTS[b.sport].name} · {formatDateShort(b.bookingDate)} ·{" "}
+                        {formatHour(b.startHour)}–{formatHour(b.endHour)}
                       </p>
                       {b.notes && <p className="mt-1 text-xs text-black/50">📝 {b.notes}</p>}
                       <p className="mt-1 font-mono text-[10px] text-black/30">
@@ -645,13 +703,8 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                         {i.customerName} · <span className="text-black/50">{i.customerPhone}</span>
                       </p>
                       <p className="mt-0.5 text-sm text-black/60">
-                        {i.eventType} ·{" "}
-                        {new Date(i.preferredDate).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        })}{" "}
-                        · {i.expectedGuests} guests
+                        {i.eventType} · {formatDateFull(i.preferredDate)} · {i.expectedGuests}{" "}
+                        guests
                       </p>
                       {i.specialRequirements && (
                         <p className="mt-1 text-xs text-black/50">📝 {i.specialRequirements}</p>
@@ -1178,8 +1231,26 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                   className="mt-1 w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-normal text-prime focus:border-prime focus:outline-none"
                 />
               </label>
+              <div className="rounded-xl border border-black/5 bg-surface p-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-black/50">
+                  Auto-generated QR
+                </p>
+                <p className="mt-1 text-xs text-black/50">
+                  Customers see this automatically with the exact booking amount pre-filled — no
+                  upload needed.
+                </p>
+                {adminQrPreview ? (
+                  <img
+                    src={adminQrPreview}
+                    alt="UPI QR preview"
+                    className="mt-3 h-40 w-40 rounded-lg bg-white object-contain p-1"
+                  />
+                ) : (
+                  <p className="mt-3 text-xs text-black/40">Enter a UPI ID to preview the QR.</p>
+                )}
+              </div>
               <label className="block text-xs font-bold uppercase tracking-widest text-black/50">
-                QR code image URL (optional)
+                Custom QR image URL (optional — overrides the auto QR)
                 <input
                   value={payment?.qrCodeUrl ?? ""}
                   onChange={(e) =>
@@ -1199,6 +1270,104 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                 {savingPayment ? "Saving…" : "Save payment details"}
               </button>
             </form>
+          </div>
+        )}
+
+        {tab === "pricing" && (
+          <div className="mt-6 max-w-2xl">
+            <div className="space-y-4 rounded-2xl border border-black/5 bg-white p-6">
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-xl bg-sport/20 text-prime">
+                  <IndianRupee className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-extrabold">Pricing & availability</h2>
+                  <p className="text-sm text-black/50">
+                    Set the per-hour rate and pause bookings for any sport.
+                  </p>
+                </div>
+              </div>
+
+              {(Object.keys(SPORTS) as SportSlug[]).map((slug) => {
+                const held = venue.holds[slug];
+                return (
+                  <div key={slug} className="rounded-2xl border border-black/10 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{SPORTS[slug].name}</p>
+                        <p className="text-xs text-black/40">{SPORTS[slug].tagline}</p>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-black/50">
+                        ₹ / hour
+                        <input
+                          type="number"
+                          min={0}
+                          value={venue.prices[slug]}
+                          onChange={(e) =>
+                            setVenue((v) => ({
+                              ...v,
+                              prices: { ...v.prices, [slug]: Number(e.target.value) },
+                            }))
+                          }
+                          className="w-28 rounded-xl border border-black/10 bg-white p-2 text-right text-sm font-bold text-prime focus:border-prime focus:outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between rounded-xl bg-surface px-3 py-2">
+                      <span className="text-sm font-bold">
+                        {held.onHold ? (
+                          <span className="text-amber-700">On hold — hidden from booking</span>
+                        ) : (
+                          <span className="text-emerald-700">Available for booking</span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVenue((v) => ({
+                            ...v,
+                            holds: {
+                              ...v.holds,
+                              [slug]: { ...v.holds[slug], onHold: !v.holds[slug].onHold },
+                            },
+                          }))
+                        }
+                        className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${held.onHold ? "bg-amber-500 text-white" : "bg-black/10 text-black/60"}`}
+                      >
+                        {held.onHold ? "Resume" : "Put on hold"}
+                      </button>
+                    </div>
+
+                    {held.onHold && (
+                      <input
+                        value={held.reason}
+                        onChange={(e) =>
+                          setVenue((v) => ({
+                            ...v,
+                            holds: {
+                              ...v.holds,
+                              [slug]: { ...v.holds[slug], reason: e.target.value },
+                            },
+                          }))
+                        }
+                        placeholder="Reason shown to customers (e.g. Turf maintenance until Aug 5)"
+                        maxLength={160}
+                        className="mt-3 w-full rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 placeholder:text-amber-500/70 focus:border-amber-400 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={saveVenue}
+                disabled={savingVenue}
+                className="w-full rounded-xl bg-prime py-3 text-xs font-bold uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {savingVenue ? "Saving…" : "Save pricing & availability"}
+              </button>
+            </div>
           </div>
         )}
       </div>
