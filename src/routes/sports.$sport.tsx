@@ -42,14 +42,17 @@ function SportPage() {
   const s = SPORTS[sport];
   const [price, setPrice] = useState<number>(SPORT_PRICES[sport]);
   const [hold, setHold] = useState<SportHold | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    setLoaded(false);
     getVenueConfig()
       .then((config) => {
         setPrice(config.prices[sport]);
         setHold(config.holds[sport]);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, [sport]);
 
   const isOnHold = hold?.onHold === true;
@@ -75,9 +78,13 @@ function SportPage() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-prime via-prime/30 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-          <span className="rounded-full bg-sport px-3 py-1 text-[10px] font-black uppercase tracking-wider text-sport-foreground">
-            {formatINR(price)}/hr
-          </span>
+          {loaded ? (
+            <span className="rounded-full bg-sport px-3 py-1 text-[10px] font-black uppercase tracking-wider text-sport-foreground">
+              {formatINR(price)}/hr
+            </span>
+          ) : (
+            <span className="inline-block h-5 w-20 animate-pulse rounded-full bg-white/25" />
+          )}
           <h1 className="mt-3 text-4xl font-extrabold tracking-tight italic">{s.name}</h1>
           <p className="mt-1 text-sm text-white/70">{s.tagline}</p>
         </div>

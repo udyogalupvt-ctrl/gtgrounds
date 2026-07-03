@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { TopNav } from "@/components/site/TopNav";
 import { BottomNav } from "@/components/site/BottomNav";
-import { SPORTS, formatHour, formatINR } from "@/lib/venue";
+import { SlotPicker } from "@/components/site/SlotPicker";
+import { SPORTS, currentHourIST, formatDateShort, formatINR, todayIsoIST } from "@/lib/venue";
+import { getAvailability, occupiedHours } from "@/lib/booking-store";
 import { getPublicAnnouncements, type Announcement } from "@/lib/content-store";
 import { defaultVenueConfig, getVenueConfig, type VenueConfig } from "@/lib/venue-config-store";
 import {
@@ -53,16 +55,39 @@ export const Route = createFileRoute("/")({
 
 function LandingPage() {
   const navigate = useNavigate();
+  const today = todayIsoIST();
+  const nowHour = currentHourIST();
   const [quickSport, setQuickSport] = useState<keyof typeof SPORTS>("box_cricket");
-  const [quickStart, setQuickStart] = useState(19);
-  const [quickEnd, setQuickEnd] = useState(21);
+  const [quickStart, setQuickStart] = useState(Math.min(23, Math.max(nowHour, 6)));
+  const [quickEnd, setQuickEnd] = useState(Math.min(24, Math.max(nowHour, 6) + 2));
   const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
+  const [venueLoaded, setVenueLoaded] = useState(false);
+  const [quickOccupied, setQuickOccupied] = useState<Set<number>>(new Set());
+  const [slotsLoading, setSlotsLoading] = useState(true);
 
   useEffect(() => {
     getVenueConfig()
       .then(setVenue)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setVenueLoaded(true));
   }, []);
+
+  // Today's availability for the selected sport, so the picker shows free slots.
+  useEffect(() => {
+    let cancelled = false;
+    setSlotsLoading(true);
+    getAvailability(quickSport, today)
+      .then((rows) => {
+        if (!cancelled) setQuickOccupied(occupiedHours(rows));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [quickSport, today]);
 
   const quickHeld = venue.holds[quickSport]?.onHold === true;
   const quickIsValid = quickEnd > quickStart && !quickHeld;
@@ -154,9 +179,13 @@ function LandingPage() {
                 <h3 className="truncate text-xl font-bold">{sport.name}</h3>
                 <p className="mb-3 truncate text-xs text-white/50">{sport.tagline}</p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded bg-sport px-2 py-1 text-[10px] font-black text-sport-foreground">
-                    {formatINR(venue.prices[sport.slug])}/hr
-                  </span>
+                  {venueLoaded ? (
+                    <span className="rounded bg-sport px-2 py-1 text-[10px] font-black text-sport-foreground">
+                      {formatINR(venue.prices[sport.slug])}/hr
+                    </span>
+                  ) : (
+                    <span className="h-6 w-16 animate-pulse rounded bg-white/20" />
+                  )}
                   {venue.holds[sport.slug]?.onHold ? (
                     <span className="inline-flex items-center gap-1 rounded bg-amber-400/90 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-950">
                       <Lock className="h-3 w-3" /> On hold
@@ -200,44 +229,29 @@ function LandingPage() {
               </button>
             ))}
           </div>
-          <div className="mb-6 grid grid-cols-2 gap-3">
-            <label className="rounded-2xl border border-black/5 bg-white p-4">
-              <span className="mb-1 block text-[10px] font-bold uppercase text-black/40">
-                Start Time
-              </span>
-              <select
-                value={quickStart}
-                onChange={(e) => {
-                  const h = Number(e.target.value);
-                  setQuickStart(h);
-                  if (quickEnd <= h) setQuickEnd(Math.min(24, h + 1));
+          {!quickHeld && (
+            <div className="mb-6 rounded-2xl border border-black/5 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-black/40">
+                  Today · {formatDateShort(today)} — tap start, then end
+                </span>
+                <span className="text-[10px] font-bold uppercase text-black/40">
+                  {quickHours > 0 ? `${quickHours}h selected` : "Pick a slot"}
+                </span>
+              </div>
+              <SlotPicker
+                occupied={quickOccupied}
+                startHour={quickStart}
+                endHour={quickEnd}
+                minStartHour={nowHour}
+                loading={slotsLoading}
+                onSelect={(s, e) => {
+                  setQuickStart(s);
+                  setQuickEnd(e);
                 }}
-                className="w-full bg-transparent text-lg font-bold focus:outline-none"
-              >
-                {Array.from({ length: 24 }, (_, h) => (
-                  <option key={h} value={h}>
-                    {formatHour(h)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="rounded-2xl border border-black/5 bg-white p-4">
-              <span className="mb-1 block text-[10px] font-bold uppercase text-black/40">
-                End Time
-              </span>
-              <select
-                value={quickEnd}
-                onChange={(e) => setQuickEnd(Number(e.target.value))}
-                className="w-full bg-transparent text-lg font-bold focus:outline-none"
-              >
-                {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
-                  <option key={h} value={h}>
-                    {formatHour(h)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+              />
+            </div>
+          )}
           {quickHeld && (
             <div className="mb-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
               <Lock className="h-4 w-4 shrink-0" />
@@ -251,9 +265,11 @@ function LandingPage() {
               <p className="text-xl font-black italic">
                 {quickHeld
                   ? "On hold"
-                  : quickEnd > quickStart
-                    ? formatINR(quickTotal)
-                    : "Select range"}
+                  : !venueLoaded
+                    ? "…"
+                    : quickEnd > quickStart
+                      ? formatINR(quickTotal)
+                      : "Select range"}
               </p>
             </div>
             <button

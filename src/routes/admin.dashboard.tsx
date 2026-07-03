@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
+  deleteBooking,
   getPaymentSettings,
   savePaymentSettings,
   subscribeAdminBookings,
@@ -33,6 +34,7 @@ import {
   type PaymentSettings,
   type SportsBooking,
 } from "@/lib/booking-store";
+import { AdminTodaySlots } from "@/components/site/AdminTodaySlots";
 
 import { uploadGalleryMedia } from "@/lib/cloudinary";
 import {
@@ -296,6 +298,18 @@ function AdminDashboard() {
       // The live subscription reflects the change automatically.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update status");
+    }
+  }
+
+  async function removeBooking(b: SportsBooking) {
+    const label = `${b.customerName} — ${SPORTS[b.sport].name} ${formatDateShort(b.bookingDate)} ${formatHour(b.startHour)}–${formatHour(b.endHour)}`;
+    if (!window.confirm(`Delete this booking?\n\n${label}\n\nThis cannot be undone.`)) return;
+    try {
+      await deleteBooking(b.id);
+      toast.success("Booking deleted");
+      // Live subscription removes it from the list automatically.
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete booking");
     }
   }
 
@@ -593,6 +607,7 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
 
         {tab === "sports" && (
           <div className="mt-6">
+            <AdminTodaySlots bookings={bookings} prices={venue.prices} />
             <div className="mb-4 flex flex-col gap-2 sm:flex-row">
               <input
                 value={q}
@@ -688,6 +703,12 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                         WhatsApp confirm
                       </a>
                     )}
+                    <button
+                      onClick={() => removeBooking(b)}
+                      className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
                   </div>
                 </li>
               ))}

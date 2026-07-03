@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -14,7 +15,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { notifyAdmins } from "./admin-notify.functions";
-import { getFirebaseAuth, getFirebaseDb } from "./firebase";
+import { getFirebaseAuth, getFirebaseDb, isAdminEmail } from "./firebase";
 import { SportSlug } from "./venue";
 
 export type BookingStatus =
@@ -131,6 +132,18 @@ export function hasOverlap(
       startHour < booking.endHour &&
       endHour > booking.startHour,
   );
+}
+
+/** Set of hour-slots (e.g. 20 = the 8–9 PM slot) already taken by active bookings. */
+export function occupiedHours(
+  bookings: Pick<SportsBooking, "startHour" | "endHour" | "status">[],
+): Set<number> {
+  const set = new Set<number>();
+  for (const booking of bookings) {
+    if (!ACTIVE_STATUSES.has(booking.status as BookingStatus)) continue;
+    for (let h = booking.startHour; h < booking.endHour; h++) set.add(h);
+  }
+  return set;
 }
 
 export async function getAvailability(sport: SportSlug, bookingDate: string) {
@@ -293,6 +306,54 @@ export async function subscribeAdminInquiries(
 export async function updateBookingStatus(bookingId: string, status: BookingStatus) {
   const db = await getFirebaseDb();
   await updateDoc(doc(db, "sportsBookings", bookingId), { status, updatedAt: serverTimestamp() });
+}
+
+export async function deleteBooking(bookingId: string) {
+  const auth = await getFirebaseAuth();
+  if (!isAdminEmail(auth.currentUser?.email)) throw new Error("Admin access required.");
+  const db = await getFirebaseDb();
+  await deleteDoc(doc(db, "sportsBookings", bookingId));
+}
+
+/**
+ * Admin books a slot directly (walk-in / phone booking). The booking is created
+ * already approved and does not require payment proof. Still guards overlaps.
+ */
+export async function adminCreateBooking(input: {
+  sport: SportSlug;
+  bookingDate: string;
+  startHour: number;
+  endHour: number;
+  pricePerHour: number;
+  customerName: string;
+  customerPhone: string;
+}) {
+  const auth = await getFirebaseAuth();
+  if (!isAdminEmail(auth.currentUser?.email)) throw new Error("Admin access required.");
+  const db = await getFirebaseDb();
+  const active = await getAvailability(input.sport, input.bookingDate);
+  if (hasOverlap(input.startHour, input.endHour, active)) {
+    throw new Error("That time overlaps another booking. Pick a free slot.");
+  }
+  const totalHours = input.endHour - input.startHour;
+  await addDoc(collection(db, "sportsBookings"), {
+    sport: input.sport,
+    bookingDate: input.bookingDate,
+    startHour: input.startHour,
+    endHour: input.endHour,
+    totalHours,
+    pricePerHour: input.pricePerHour,
+    totalAmount: totalHours * input.pricePerHour,
+    status: "approved" satisfies BookingStatus,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    notes: "Booked by admin",
+    paymentProofUrl: null,
+    userId: null,
+    createdBy: auth.currentUser?.uid ?? null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function getPaymentSettings(): Promise<PaymentSettings> {

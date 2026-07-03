@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { z } from "zod";
 import { TopNav } from "@/components/site/TopNav";
+import { SlotPicker } from "@/components/site/SlotPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ import {
   getAvailability,
   getPaymentSettings,
   hasOverlap,
+  occupiedHours,
   submitBookingPaymentProof,
   type PaymentSettings,
   type SportsBooking,
@@ -69,7 +71,6 @@ export const Route = createFileRoute("/book/$sport")({
 });
 
 type Step = 1 | 2 | 3 | 4;
-const timeOptions = Array.from({ length: CLOSE_HOUR - OPEN_HOUR + 1 }, (_, i) => OPEN_HOUR + i);
 
 function toIsoDate(d: Date) {
   const yyyy = d.getFullYear();
@@ -215,9 +216,9 @@ function BookingPage() {
   }, [settings?.upiId, settings?.upiName, total]);
 
   const days = useMemo(() => upcomingDaysIST(21), []);
-  const minStart = upcomingHourFor(date);
-  const nowHourToday = date === todayIsoIST() ? currentHourIST() : -1;
   const isOnHold = hold?.onHold === true;
+  const occupied = useMemo(() => occupiedHours(bookings), [bookings]);
+  const pastCutoff = date === todayIsoIST() ? currentHourIST() : OPEN_HOUR;
 
   function continueFromTime() {
     if (isOnHold) return toast.error("This sport is currently on hold.");
@@ -402,45 +403,22 @@ function BookingPage() {
               <CalendarDays className="h-4 w-4" />
               {formatDateLong(date)}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-black/50">
-                  Start time
-                </span>
-                <select
-                  value={startHour}
-                  onChange={(e) => {
-                    const next = Number(e.target.value);
-                    setStartHour(next);
-                    if (endHour <= next) setEndHour(Math.min(24, next + 1));
-                  }}
-                  className="w-full rounded-2xl border border-black/10 bg-white p-4 text-base font-bold focus:border-prime focus:outline-none"
-                >
-                  {timeOptions.slice(0, -1).map((h) => (
-                    <option key={h} value={h} disabled={h < minStart}>
-                      {formatHour(h)}
-                      {h < minStart ? " (past)" : h === nowHourToday ? " (now)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-black/50">
-                  End time
-                </span>
-                <select
-                  value={endHour}
-                  onChange={(e) => setEndHour(Number(e.target.value))}
-                  className="w-full rounded-2xl border border-black/10 bg-white p-4 text-base font-bold focus:border-prime focus:outline-none"
-                >
-                  {timeOptions.slice(1).map((h) => (
-                    <option key={h} value={h} disabled={h <= startHour}>
-                      {formatHour(h)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-black/50">
+              Tap a start slot, then an end slot
+            </p>
+            <SlotPicker
+              occupied={occupied}
+              startHour={startHour}
+              endHour={endHour}
+              minStartHour={pastCutoff}
+              openHour={OPEN_HOUR}
+              closeHour={CLOSE_HOUR}
+              loading={loadingSlots}
+              onSelect={(s, e) => {
+                setStartHour(s);
+                setEndHour(e);
+              }}
+            />
             <div className="mt-6 rounded-2xl bg-surface p-5">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-black/60">
@@ -455,25 +433,10 @@ function BookingPage() {
                 <span className="text-xs font-bold uppercase text-black/50">Total</span>
                 <span className="text-2xl font-black">{formatINR(total)}</span>
               </div>
-              {loadingSlots && (
-                <p className="mt-3 text-xs text-black/40">Checking live availability…</p>
-              )}
               {overlaps && (
                 <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700">
                   This time overlaps an existing booking. Please choose another range.
                 </p>
-              )}
-              {bookings.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {bookings.map((b) => (
-                    <span
-                      key={b.id}
-                      className="rounded-full bg-black/5 px-3 py-1 text-[11px] font-bold text-black/50"
-                    >
-                      Booked {formatHour(b.startHour)}–{formatHour(b.endHour)}
-                    </span>
-                  ))}
-                </div>
               )}
             </div>
             <button
