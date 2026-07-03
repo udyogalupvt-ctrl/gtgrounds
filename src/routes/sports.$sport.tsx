@@ -1,0 +1,123 @@
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+
+import { TopNav } from "@/components/site/TopNav";
+import { BottomNav } from "@/components/site/BottomNav";
+import { SPORTS, SportSlug, formatINR } from "@/lib/venue";
+import cricketImg from "@/assets/sport-cricket.jpg";
+import volleyballImg from "@/assets/sport-volleyball.jpg";
+import badmintonImg from "@/assets/sport-badminton.jpg";
+
+const IMAGES: Record<SportSlug, string> = {
+  box_cricket: cricketImg,
+  volleyball: volleyballImg,
+  badminton: badmintonImg,
+};
+const PRICES: Record<SportSlug, number> = { box_cricket: 800, volleyball: 600, badminton: 400 };
+
+export const Route = createFileRoute("/sports/$sport")({
+  head: ({ params }) => {
+    const slug = params.sport as SportSlug;
+    const s = SPORTS[slug];
+    return {
+      meta: [
+        { title: s ? `${s.name} — GT Grounds Dokiparru` : "Sport" },
+        { name: "description", content: s?.description ?? "" },
+      ],
+    };
+  },
+  loader: ({ params }) => {
+    const slug = params.sport as SportSlug;
+    if (!(slug in SPORTS)) throw notFound();
+    return { sport: slug };
+  },
+  component: SportPage,
+  notFoundComponent: () => <div className="p-10 text-center">Sport not found</div>,
+});
+
+function SportPage() {
+  const data = Route.useLoaderData() as { sport: SportSlug };
+  const sport = data.sport;
+  const s = SPORTS[sport];
+  const price = PRICES[sport];
+
+  return (
+    <div className="bg-white pb-32">
+      <TopNav />
+      <div className="mx-auto max-w-3xl px-5 pt-4">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center gap-2 text-sm font-semibold text-black/60"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
+      </div>
+      <section className="relative">
+        <img
+          src={IMAGES[sport]}
+          alt={s.name}
+          width={800}
+          height={800}
+          className="aspect-square w-full object-cover sm:aspect-[16/9]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-prime via-prime/30 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
+          <span className="rounded-full bg-sport px-3 py-1 text-[10px] font-black uppercase tracking-wider text-sport-foreground">
+            {formatINR(price)}/hr
+          </span>
+          <h1 className="mt-3 text-4xl font-extrabold tracking-tight italic">{s.name}</h1>
+          <p className="mt-1 text-sm text-white/70">{s.tagline}</p>
+        </div>
+      </section>
+
+      <div className="px-5 py-8">
+        <p className="text-base leading-relaxed text-black/70">{s.description}</p>
+
+        <h2 className="mt-10 mb-4 text-xs font-bold uppercase tracking-widest text-black/40">
+          Features
+        </h2>
+        <ul className="grid gap-2">
+          {s.features.map((f) => (
+            <li
+              key={f}
+              className="flex items-center gap-3 rounded-xl border border-black/5 bg-surface p-3 text-sm font-medium"
+            >
+              <span className="grid size-7 place-items-center rounded-full bg-sport text-sport-foreground">
+                <Check className="h-4 w-4" />
+              </span>
+              {f}
+            </li>
+          ))}
+        </ul>
+
+        <h2 className="mt-10 mb-4 text-xs font-bold uppercase tracking-widest text-black/40">
+          Rules
+        </h2>
+        <ul className="grid gap-2 text-sm text-black/70">
+          {s.rules.map((r) => (
+            <li key={r} className="rounded-xl border border-black/5 p-3">
+              {r}
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-10 rounded-2xl bg-prime p-6 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+            Ready to Play?
+          </p>
+          <p className="mt-2 mb-6 text-2xl font-extrabold">Book your slot in seconds.</p>
+          <Link
+            to="/book/$sport"
+            params={{ sport }}
+            className="flex items-center justify-between rounded-xl bg-sport px-5 py-4 text-sm font-bold uppercase tracking-widest text-sport-foreground"
+          >
+            Book {s.name}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+}
