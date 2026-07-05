@@ -1,10 +1,27 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-function compactHour(h: number) {
-  const hour = h % 12 === 0 ? 12 : h % 12;
-  const period = h >= 12 && h < 24 ? "PM" : "AM";
-  return `${hour} ${period}`;
+function hourNum(h: number) {
+  const wrapped = h % 24;
+  return wrapped % 12 === 0 ? 12 : wrapped % 12;
+}
+
+function hourPeriod(h: number) {
+  return h % 24 >= 12 ? "PM" : "AM";
+}
+
+/**
+ * A slot card is one hour block, labelled as a range ("6 – 7 PM") so nobody
+ * has to guess whether tapping "6" means starting or ending at 6. When the
+ * block crosses noon/midnight both periods are shown ("11 AM – 12 PM").
+ */
+function slotLabel(h: number): { range: string; period: string } {
+  const startPeriod = hourPeriod(h);
+  const endPeriod = hourPeriod(h + 1);
+  return {
+    range: `${hourNum(h)} – ${hourNum(h + 1)}`,
+    period: startPeriod === endPeriod ? startPeriod : `${startPeriod} – ${endPeriod}`,
+  };
 }
 
 type Props = {
@@ -65,9 +82,9 @@ export function SlotPicker({
 
   if (loading) {
     return (
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {hours.map((h) => (
-          <div key={h} className="h-12 animate-pulse rounded-xl bg-black/5" />
+          <div key={h} className="h-14 animate-pulse rounded-xl bg-black/5" />
         ))}
       </div>
     );
@@ -75,11 +92,12 @@ export function SlotPicker({
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {hours.map((h) => {
           const booked = occupied.has(h);
           const past = h < minStartHour;
           const selected = h >= startHour && h < endHour;
+          const label = slotLabel(h);
           return (
             <button
               key={h}
@@ -87,17 +105,24 @@ export function SlotPicker({
               disabled={booked || past}
               onClick={() => handleClick(h)}
               className={cn(
-                "flex h-12 items-center justify-center rounded-xl border text-xs font-bold transition-colors",
+                "flex h-14 flex-col items-center justify-center rounded-xl border transition-colors",
                 selected
                   ? "border-prime bg-prime text-prime-foreground"
                   : booked
-                    ? "cursor-not-allowed border-red-100 bg-red-50 text-red-400 line-through"
+                    ? "cursor-not-allowed border-red-100 bg-red-50 text-red-400"
                     : past
                       ? "cursor-not-allowed border-black/5 bg-black/5 text-black/25"
                       : "border-black/10 bg-white text-prime hover:border-prime active:scale-95",
               )}
             >
-              {compactHour(h)}
+              <span
+                className={cn("text-sm font-extrabold leading-tight", booked && "line-through")}
+              >
+                {label.range}
+              </span>
+              <span className="text-[9px] font-bold uppercase tracking-wider opacity-60">
+                {label.period}
+              </span>
             </button>
           );
         })}

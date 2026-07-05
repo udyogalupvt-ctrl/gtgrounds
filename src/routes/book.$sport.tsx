@@ -19,8 +19,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { uploadPaymentProof } from "@/lib/cloudinary";
+import { getUserProfile, onFirebaseAuth, saveUserPhone } from "@/lib/firebase";
 import { buildUpiUri, generateUpiQr } from "@/lib/upi";
 import { getVenueConfig, type SportHold } from "@/lib/venue-config-store";
+import type { User } from "firebase/auth";
 import {
   createSportsBooking,
   getAvailability,
@@ -120,6 +122,8 @@ function BookingPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [autoFilled, setAutoFilled] = useState(false);
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -188,6 +192,31 @@ function BookingPage() {
       .catch(() => {});
   }, [sport]);
 
+  // Auto-fill contact details so a returning customer never retypes them:
+  // signed-in users get their profile name/phone; guests get the phone they
+  // last booked with on this device. Fields stay fully editable.
+  useEffect(() => {
+    let unsubscribe: undefined | (() => void);
+    onFirebaseAuth(async (nextUser) => {
+      setUser(nextUser);
+      const savedPhone =
+        typeof window !== "undefined" ? (localStorage.getItem("gt_phone") ?? "") : "";
+      if (!nextUser) {
+        if (savedPhone) setPhone((current) => current || savedPhone);
+        return;
+      }
+      const profile = await getUserProfile(nextUser.uid).catch(() => null);
+      const profileName = profile?.fullName || nextUser.displayName || "";
+      const profilePhone = profile?.phone || savedPhone;
+      if (profileName) setName((current) => current || profileName);
+      if (profilePhone) setPhone((current) => current || profilePhone);
+      if (profileName || profilePhone) setAutoFilled(true);
+    }).then((fn) => {
+      unsubscribe = fn;
+    });
+    return () => unsubscribe?.();
+  }, []);
+
   // Regenerate the UPI QR whenever the payable amount or UPI target changes, so
   // the code the customer scans always carries the exact total. A manually
   // uploaded QR (settings.qrCodeUrl) takes precedence when present.
@@ -249,6 +278,8 @@ function BookingPage() {
       });
       setBookingId(id);
       localStorage.setItem("gt_phone", normalizePhone(parsed.data.phone));
+      // Remember the phone on the account so next booking is zero-typing.
+      if (user) void saveUserPhone(user.uid, normalizePhone(parsed.data.phone)).catch(() => {});
       setStep(4);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create booking. Try again.");
@@ -404,7 +435,7 @@ function BookingPage() {
               {formatDateLong(date)}
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-wider text-black/50">
-              Tap a start slot, then an end slot
+              Each card is a 1-hour slot — tap one, tap another to extend
             </p>
             <SlotPicker
               occupied={occupied}
@@ -451,6 +482,12 @@ function BookingPage() {
 
         {step === 3 && (
           <div className="mt-8 space-y-4">
+            {autoFilled && (
+              <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
+                <Check className="h-4 w-4 shrink-0" />
+                Filled from your account — edit if you're booking for someone else.
+              </div>
+            )}
             <label className="block">
               <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-black/50">
                 Full name

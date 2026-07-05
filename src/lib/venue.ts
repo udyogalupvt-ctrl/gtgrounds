@@ -153,6 +153,12 @@ export function formatDateShort(iso: string) {
   return `${d} ${MONTHS_SHORT[m - 1]}`;
 }
 
+/** "Thu, 3 Jul" */
+export function formatDateCompact(iso: string) {
+  const { m, d, weekday } = parseIsoParts(iso);
+  return `${WEEKDAYS_SHORT[weekday]}, ${d} ${MONTHS_SHORT[m - 1]}`;
+}
+
 /** "Thursday, 3 July" */
 export function formatDateLong(iso: string) {
   const { m, d, weekday } = parseIsoParts(iso);

@@ -10,7 +10,14 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { doc, getFirestore, serverTimestamp, setDoc, type Firestore } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  serverTimestamp,
+  setDoc,
+  type Firestore,
+} from "firebase/firestore";
 import { getFirebasePublicConfig } from "./firebase-config.functions";
 
 export const ADMIN_EMAIL = "jilanigtgrounds@gmail.com";
@@ -60,6 +67,31 @@ export async function upsertUserProfile(user: User, extra?: { fullName?: string;
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
+    { merge: true },
+  );
+}
+
+export type UserProfile = { fullName: string; phone: string; email: string };
+
+/** Saved profile details, used to auto-fill booking forms for signed-in users. */
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  const db = await getFirebaseDb();
+  const snap = await getDoc(doc(db, "userProfiles", uid));
+  if (!snap.exists()) return null;
+  const d = snap.data();
+  return {
+    fullName: d.fullName ?? "",
+    phone: d.phone ?? "",
+    email: d.email ?? "",
+  };
+}
+
+/** Remembers the phone a signed-in user booked with, for future auto-fill. */
+export async function saveUserPhone(uid: string, phone: string) {
+  const db = await getFirebaseDb();
+  await setDoc(
+    doc(db, "userProfiles", uid),
+    { phone: phone.trim(), updatedAt: serverTimestamp() },
     { merge: true },
   );
 }

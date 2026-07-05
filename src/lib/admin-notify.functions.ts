@@ -32,6 +32,28 @@ const alertSchema = z.discriminatedUnion("kind", [
     customerName: z.string().max(120),
     customerPhone: z.string().max(40),
   }),
+  z.object({
+    kind: z.literal("booking_cancelled"),
+    sport: z.enum(["box_cricket", "volleyball", "badminton"]),
+    bookingDate: z.string().max(40),
+    startHour: z.number().min(0).max(24),
+    endHour: z.number().min(0).max(24),
+    customerName: z.string().max(120),
+    customerPhone: z.string().max(40),
+  }),
+  z.object({
+    kind: z.literal("booking_rescheduled"),
+    sport: z.enum(["box_cricket", "volleyball", "badminton"]),
+    oldDate: z.string().max(40),
+    oldStartHour: z.number().min(0).max(24),
+    oldEndHour: z.number().min(0).max(24),
+    bookingDate: z.string().max(40),
+    startHour: z.number().min(0).max(24),
+    endHour: z.number().min(0).max(24),
+    totalAmount: z.number().min(0),
+    customerName: z.string().max(120),
+    customerPhone: z.string().max(40),
+  }),
 ]);
 
 type AdminAlert = z.infer<typeof alertSchema>;
@@ -55,6 +77,18 @@ function composeMessage(alert: AdminAlert): { title: string; body: string; tag: 
         title: `New function inquiry — ${alert.eventType}`,
         body: `${alert.customerName} (${alert.customerPhone}) · ${alert.preferredDate} · ${alert.expectedGuests} guests`,
         tag: `inquiry-${alert.preferredDate}-${alert.customerName}`,
+      };
+    case "booking_cancelled":
+      return {
+        title: `Booking cancelled — ${SPORTS[alert.sport].name}`,
+        body: `${alert.customerName} (${alert.customerPhone}) cancelled ${alert.bookingDate}, ${formatHour(alert.startHour)}–${formatHour(alert.endHour)}. The slot is free again.`,
+        tag: `cancel-${alert.bookingDate}-${alert.startHour}`,
+      };
+    case "booking_rescheduled":
+      return {
+        title: `Booking rescheduled — ${SPORTS[alert.sport].name}`,
+        body: `${alert.customerName} (${alert.customerPhone}) moved ${alert.oldDate} ${formatHour(alert.oldStartHour)}–${formatHour(alert.oldEndHour)} → ${alert.bookingDate} ${formatHour(alert.startHour)}–${formatHour(alert.endHour)} · ${formatINR(alert.totalAmount)}`,
+        tag: `reschedule-${alert.bookingDate}-${alert.startHour}`,
       };
   }
 }

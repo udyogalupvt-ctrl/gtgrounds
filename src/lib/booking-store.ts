@@ -16,7 +16,8 @@ import {
 } from "firebase/firestore";
 import { notifyAdmins } from "./admin-notify.functions";
 import { getFirebaseAuth, getFirebaseDb, isAdminEmail } from "./firebase";
-import { SportSlug } from "./venue";
+import { getVenueConfig } from "./venue-config-store";
+import { SportSlug, currentHourIST, isWeekend, todayIsoIST } from "./venue";
 
 export type BookingStatus =
   | "pending_payment"
@@ -306,6 +307,100 @@ export async function subscribeAdminInquiries(
 export async function updateBookingStatus(bookingId: string, status: BookingStatus) {
   const db = await getFirebaseDb();
   await updateDoc(doc(db, "sportsBookings", bookingId), { status, updatedAt: serverTimestamp() });
+}
+
+/** A booking the signed-in customer may still cancel or reschedule: it's active
+ *  and its start time hasn't passed yet (venue-local time). */
+export function canModifyBooking(b: Pick<SportsBooking, "status" | "bookingDate" | "startHour">) {
+  if (!ACTIVE_STATUSES.has(b.status)) return false;
+  const today = todayIsoIST();
+  if (b.bookingDate > today) return true;
+  return b.bookingDate === today && b.startHour > currentHourIST();
+}
+
+/** Fetches a booking and verifies the signed-in user owns it and can still modify it. */
+async function getOwnModifiableBooking(bookingId: string) {
+  const user = (await getFirebaseAuth()).currentUser;
+  if (!user) throw new Error("Sign in to manage your bookings.");
+  const db = await getFirebaseDb();
+  const snap = await getDoc(doc(db, "sportsBookings", bookingId));
+  if (!snap.exists()) throw new Error("Booking not found.");
+  const booking = mapBooking(snap as QueryDocumentSnapshot<DocumentData>);
+  if (booking.userId !== user.uid) throw new Error("This booking belongs to another account.");
+  if (!canModifyBooking(booking)) {
+    throw new Error("This booking can no longer be changed. Contact the admin for help.");
+  }
+  return booking;
+}
+
+export async function cancelMyBooking(bookingId: string) {
+  const booking = await getOwnModifiableBooking(bookingId);
+  const db = await getFirebaseDb();
+  await updateDoc(doc(db, "sportsBookings", bookingId), {
+    status: "cancelled" satisfies BookingStatus,
+    updatedAt: serverTimestamp(),
+  });
+  void notifyAdmins({
+    data: {
+      kind: "booking_cancelled",
+      sport: booking.sport,
+      bookingDate: booking.bookingDate,
+      startHour: booking.startHour,
+      endHour: booking.endHour,
+      customerName: booking.customerName,
+      customerPhone: booking.customerPhone,
+    },
+  }).catch(() => {});
+}
+
+export async function rescheduleMyBooking(
+  bookingId: string,
+  next: { bookingDate: string; startHour: number; endHour: number },
+) {
+  const booking = await getOwnModifiableBooking(bookingId);
+  if (next.endHour <= next.startHour) throw new Error("Choose a valid time range.");
+
+  // The new slot must be free — ignoring this booking's own current slot.
+  const active = (await getAvailability(booking.sport, next.bookingDate)).filter(
+    (b) => b.id !== bookingId,
+  );
+  if (hasOverlap(next.startHour, next.endHour, active)) {
+    throw new Error("That time overlaps another booking. Pick a different slot.");
+  }
+
+  // Reprice for the new date (weekday/weekend rates can differ).
+  const config = await getVenueConfig();
+  const pricePerHour = Math.round(
+    config.prices[booking.sport] * (isWeekend(next.bookingDate) ? 1.25 : 1),
+  );
+  const totalHours = next.endHour - next.startHour;
+
+  const db = await getFirebaseDb();
+  await updateDoc(doc(db, "sportsBookings", bookingId), {
+    bookingDate: next.bookingDate,
+    startHour: next.startHour,
+    endHour: next.endHour,
+    totalHours,
+    pricePerHour,
+    totalAmount: totalHours * pricePerHour,
+    updatedAt: serverTimestamp(),
+  });
+  void notifyAdmins({
+    data: {
+      kind: "booking_rescheduled",
+      sport: booking.sport,
+      oldDate: booking.bookingDate,
+      oldStartHour: booking.startHour,
+      oldEndHour: booking.endHour,
+      bookingDate: next.bookingDate,
+      startHour: next.startHour,
+      endHour: next.endHour,
+      totalAmount: totalHours * pricePerHour,
+      customerName: booking.customerName,
+      customerPhone: booking.customerPhone,
+    },
+  }).catch(() => {});
+  return { totalAmount: totalHours * pricePerHour, previousAmount: booking.totalAmount };
 }
 
 export async function deleteBooking(bookingId: string) {
