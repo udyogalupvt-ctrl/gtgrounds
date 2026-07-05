@@ -15,9 +15,9 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { notifyAdmins } from "./admin-notify.functions";
-import { getFirebaseAuth, getFirebaseDb, isAdminEmail } from "./firebase";
-import { getVenueConfig } from "./venue-config-store";
-import { SportSlug, currentHourIST, isWeekend, todayIsoIST } from "./venue";
+import { getFirebaseAuth, getFirebaseDb, getUserProfile, isAdminEmail } from "./firebase";
+import { getVenueConfig, weekendMultiplier } from "./venue-config-store";
+import { SportSlug, currentHourIST, normalizePhone, todayIsoIST } from "./venue";
 
 export type BookingStatus =
   | "pending_payment"
@@ -159,20 +159,28 @@ export async function getAvailability(sport: SportSlug, bookingDate: string) {
   return snapshot.docs.map(mapBooking).filter((booking) => ACTIVE_STATUSES.has(booking.status));
 }
 
-export async function createSportsBooking(
+/**
+ * Creates the booking together with its payment proof, in one step. Nothing is
+ * written to Firestore before this point — a booking only exists once the
+ * customer has uploaded proof and pressed Submit, so the admin never sees
+ * half-finished "pending payment" ghosts. The slot is re-checked for overlaps
+ * at this moment since it wasn't held during payment.
+ */
+export async function submitBookingWithProof(
   input: Omit<SportsBooking, "id" | "status" | "paymentProofUrl" | "createdAt" | "userId">,
+  paymentProofUrl: string,
 ) {
   const db = await getFirebaseDb();
   const user = (await getFirebaseAuth()).currentUser;
   const activeBookings = await getAvailability(input.sport, input.bookingDate);
   if (hasOverlap(input.startHour, input.endHour, activeBookings)) {
-    throw new Error("That time overlaps another booking. Pick a different slot.");
+    throw new Error("That time was just booked by someone else. Please pick a different slot.");
   }
   const docRef = await addDoc(collection(db, "sportsBookings"), {
     ...input,
     userId: user?.uid ?? null,
-    status: "pending_payment" satisfies BookingStatus,
-    paymentProofUrl: null,
+    status: "payment_submitted" satisfies BookingStatus,
+    paymentProofUrl,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -191,32 +199,6 @@ export async function createSportsBooking(
   return docRef.id;
 }
 
-export async function submitBookingPaymentProof(bookingId: string, paymentProofUrl: string) {
-  const db = await getFirebaseDb();
-  await updateDoc(doc(db, "sportsBookings", bookingId), {
-    paymentProofUrl,
-    status: "payment_submitted" satisfies BookingStatus,
-    updatedAt: serverTimestamp(),
-  });
-  try {
-    const snapshot = await getDoc(doc(db, "sportsBookings", bookingId));
-    if (snapshot.exists()) {
-      const d = snapshot.data();
-      void notifyAdmins({
-        data: {
-          kind: "payment_submitted",
-          sport: d.sport,
-          bookingDate: d.bookingDate ?? "",
-          totalAmount: Number(d.totalAmount ?? 0),
-          customerName: d.customerName ?? "",
-        },
-      }).catch(() => {});
-    }
-  } catch {
-    // Notifying admins must never block the customer's payment submission.
-  }
-}
-
 export async function getBookingsByPhone(phone: string) {
   const db = await getFirebaseDb();
   const snapshot = await getDocs(
@@ -225,9 +207,58 @@ export async function getBookingsByPhone(phone: string) {
   return snapshot.docs.map(mapBooking).sort((a, b) => b.bookingDate.localeCompare(a.bookingDate));
 }
 
+/**
+ * Attaches bookings made as a guest (userId null) to the signed-in account by
+ * matching the phone number on the booking against the account's phone (and
+ * the phone last used on this device). This is what makes cancel/reschedule
+ * work for bookings placed before the customer signed up.
+ */
+async function claimGuestBookings(uid: string) {
+  const phones = new Set<string>();
+  try {
+    const profile = await getUserProfile(uid);
+    if (profile?.phone) {
+      phones.add(profile.phone);
+      phones.add(normalizePhone(profile.phone));
+    }
+  } catch {
+    // profile read failing must not block anything
+  }
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("gt_phone");
+    if (saved) {
+      phones.add(saved);
+      phones.add(normalizePhone(saved));
+    }
+  }
+  if (phones.size === 0) return;
+
+  const db = await getFirebaseDb();
+  await Promise.all(
+    [...phones].map(async (phone) => {
+      const snapshot = await getDocs(
+        query(
+          collection(db, "sportsBookings"),
+          where("userId", "==", null),
+          where("customerPhone", "==", phone),
+          limit(50),
+        ),
+      );
+      await Promise.all(
+        snapshot.docs.map((d) =>
+          updateDoc(d.ref, { userId: uid, updatedAt: serverTimestamp() }).catch(() => {}),
+        ),
+      );
+    }),
+  );
+}
+
 export async function getBookingsForCurrentUser() {
   const user = (await getFirebaseAuth()).currentUser;
   if (!user) return [];
+  // Pull in any guest bookings made with this customer's phone first, so they
+  // appear (and are manageable) the moment the customer signs in.
+  await claimGuestBookings(user.uid).catch(() => {});
   const db = await getFirebaseDb();
   const snapshot = await getDocs(
     query(collection(db, "sportsBookings"), where("userId", "==", user.uid), limit(100)),
@@ -368,10 +399,10 @@ export async function rescheduleMyBooking(
     throw new Error("That time overlaps another booking. Pick a different slot.");
   }
 
-  // Reprice for the new date (weekday/weekend rates can differ).
+  // Reprice for the new date (weekend surcharge only if the admin enabled it).
   const config = await getVenueConfig();
   const pricePerHour = Math.round(
-    config.prices[booking.sport] * (isWeekend(next.bookingDate) ? 1.25 : 1),
+    config.prices[booking.sport] * weekendMultiplier(config, next.bookingDate),
   );
   const totalHours = next.endHour - next.startHour;
 

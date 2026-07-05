@@ -21,15 +21,19 @@ import { cn } from "@/lib/utils";
 import { uploadPaymentProof } from "@/lib/cloudinary";
 import { getUserProfile, onFirebaseAuth, saveUserPhone } from "@/lib/firebase";
 import { buildUpiUri, generateUpiQr } from "@/lib/upi";
-import { getVenueConfig, type SportHold } from "@/lib/venue-config-store";
+import {
+  getVenueConfig,
+  weekendMultiplier,
+  type SportHold,
+  type WeekendExtra,
+} from "@/lib/venue-config-store";
 import type { User } from "firebase/auth";
 import {
-  createSportsBooking,
   getAvailability,
   getPaymentSettings,
   hasOverlap,
   occupiedHours,
-  submitBookingPaymentProof,
+  submitBookingWithProof,
   type PaymentSettings,
   type SportsBooking,
 } from "@/lib/booking-store";
@@ -45,7 +49,6 @@ import {
   formatDateShort,
   formatHour,
   formatINR,
-  isWeekend,
   normalizePhone,
   todayIsoIST,
   upcomingDaysIST,
@@ -126,8 +129,6 @@ function BookingPage() {
   const [autoFilled, setAutoFilled] = useState(false);
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [bookingId, setBookingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -135,9 +136,11 @@ function BookingPage() {
   const [settings, setSettings] = useState<PaymentSettings | null>(null);
   const [basePrice, setBasePrice] = useState<number>(SPORT_PRICES[sport]);
   const [hold, setHold] = useState<SportHold | null>(null);
+  const [weekendExtra, setWeekendExtra] = useState<WeekendExtra>({ enabled: false, percent: 25 });
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
-  const weekendMult = isWeekend(date) ? 1.25 : 1;
+  // Weekend surcharge applies only when the admin has switched it on.
+  const weekendMult = weekendMultiplier({ weekendExtra }, date);
   const pricePerHour = Math.round(basePrice * weekendMult);
   const hours = Math.max(0, endHour - startHour);
   const total = hours * pricePerHour;
@@ -182,12 +185,13 @@ function BookingPage() {
       );
   }, []);
 
-  // Admin-managed price + availability for this sport.
+  // Admin-managed price, availability, and weekend surcharge for this sport.
   useEffect(() => {
     getVenueConfig()
       .then((config) => {
         setBasePrice(config.prices[sport]);
         setHold(config.holds[sport]);
+        setWeekendExtra(config.weekendExtra);
       })
       .catch(() => {});
   }, [sport]);
@@ -256,43 +260,20 @@ function BookingPage() {
     setStep(3);
   }
 
-  async function createBooking() {
+  // Nothing is saved yet — the booking is only created when the customer
+  // submits their payment proof in step 4.
+  function continueToPayment() {
     if (isOnHold) return toast.error("This sport is currently on hold.");
     const parsed = contactSchema.safeParse({ name, phone, notes });
     if (!parsed.success) return toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
     if (endHour <= startHour) return toast.error("Choose a valid time range.");
     if (overlaps) return toast.error("This range overlaps an existing booking.");
-    setCreating(true);
-    try {
-      const id = await createSportsBooking({
-        sport,
-        bookingDate: date,
-        startHour,
-        endHour,
-        totalHours: hours,
-        pricePerHour,
-        totalAmount: total,
-        customerName: parsed.data.name.trim(),
-        customerPhone: normalizePhone(parsed.data.phone),
-        notes: parsed.data.notes?.trim() || null,
-      });
-      setBookingId(id);
-      localStorage.setItem("gt_phone", normalizePhone(parsed.data.phone));
-      // Remember the phone on the account so next booking is zero-typing.
-      if (user) void saveUserPhone(user.uid, normalizePhone(parsed.data.phone)).catch(() => {});
-      setStep(4);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create booking. Try again.");
-    } finally {
-      setCreating(false);
-    }
+    setStep(4);
   }
 
-  // Step 1 of payment: upload the screenshot to Cloudinary only. The booking is
-  // NOT submitted here — the customer can preview, remove, or replace the file
-  // and must click "Submit" to actually send it for verification.
+  // Step 1 of payment: upload the screenshot to Cloudinary only. The customer
+  // can preview, remove, or replace it before anything is committed.
   async function handleUpload(file: File) {
-    if (!bookingId) return;
     setUploading(true);
     setUploadProgress(0);
     try {
@@ -312,13 +293,33 @@ function BookingPage() {
     setUploadProgress(0);
   }
 
-  // Step 2 of payment: commit the uploaded proof to the booking and finish.
+  // Step 2 of payment: THE commit point — the booking record is created here,
+  // together with the proof, and the admin is notified once.
   async function submitProof() {
-    if (!bookingId || !proof) return;
+    if (!proof) return;
+    const parsed = contactSchema.safeParse({ name, phone, notes });
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
     setSubmitting(true);
     try {
-      await submitBookingPaymentProof(bookingId, proof.url);
-      toast.success("Payment submitted! We'll verify shortly.");
+      await submitBookingWithProof(
+        {
+          sport,
+          bookingDate: date,
+          startHour,
+          endHour,
+          totalHours: hours,
+          pricePerHour,
+          totalAmount: total,
+          customerName: parsed.data.name.trim(),
+          customerPhone: normalizePhone(parsed.data.phone),
+          notes: parsed.data.notes?.trim() || null,
+        },
+        proof.url,
+      );
+      localStorage.setItem("gt_phone", normalizePhone(parsed.data.phone));
+      // Remember the phone on the account so the next booking is zero-typing.
+      if (user) void saveUserPhone(user.uid, normalizePhone(parsed.data.phone)).catch(() => {});
+      toast.success("Booking submitted! We'll verify your payment shortly.");
       setTimeout(() => navigate({ to: "/my-bookings" }), 1000);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not submit. Try again.");
@@ -356,7 +357,8 @@ function BookingPage() {
           {step === 4 && "Pay & confirm"}
         </h1>
         <p className="mt-1 text-sm text-black/50">
-          {s.name} · Open 24 hours · {formatINR(pricePerHour)}/hr{isWeekend(date) && " weekend"}
+          {s.name} · Open 24 hours · {formatINR(pricePerHour)}/hr
+          {weekendMult > 1 && ` (weekend +${weekendExtra.percent}%)`}
         </p>
 
         {isOnHold && (
@@ -527,11 +529,10 @@ function BookingPage() {
               />
             </label>
             <button
-              disabled={creating}
-              onClick={createBooking}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
+              onClick={continueToPayment}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground"
             >
-              {creating ? "Creating…" : "Continue to payment"} <ArrowRight className="h-4 w-4" />
+              Continue to payment <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -594,8 +595,11 @@ function BookingPage() {
                 </a>
               </div>
             </div>
+            <p className="mt-4 rounded-2xl bg-surface p-3 text-center text-xs font-semibold text-black/55">
+              Your slot is confirmed only after you upload the payment screenshot and press Submit.
+            </p>
             {/* Upload → preview → submit. The screenshot uploads to Cloudinary
-                first; the booking is only submitted when the customer confirms. */}
+                first; the booking is only created when the customer confirms. */}
             {proof ? (
               <div className="mt-6 rounded-3xl border border-black/10 bg-white p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-bold text-emerald-700">
@@ -645,7 +649,7 @@ function BookingPage() {
                   disabled={submitting}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
                 >
-                  {submitting ? "Submitting…" : "Submit payment"} <Check className="h-4 w-4" />
+                  {submitting ? "Submitting…" : "Submit booking"} <Check className="h-4 w-4" />
                 </button>
               </div>
             ) : (

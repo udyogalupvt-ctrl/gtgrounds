@@ -1317,6 +1317,55 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-black/10 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-bold">Weekend extra charge</p>
+                    <p className="text-xs text-black/40">
+                      {venue.weekendExtra.enabled
+                        ? `Sat & Sun prices are ${venue.weekendExtra.percent}% higher`
+                        : "Off — weekends cost the same as weekdays"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVenue((v) => ({
+                        ...v,
+                        weekendExtra: { ...v.weekendExtra, enabled: !v.weekendExtra.enabled },
+                      }))
+                    }
+                    className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${venue.weekendExtra.enabled ? "bg-prime text-white" : "bg-black/10 text-black/60"}`}
+                  >
+                    {venue.weekendExtra.enabled ? "On" : "Off"}
+                  </button>
+                </div>
+                {venue.weekendExtra.enabled && (
+                  <label className="mt-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-black/50">
+                    Extra %
+                    <input
+                      type="number"
+                      min={0}
+                      max={200}
+                      value={venue.weekendExtra.percent}
+                      onChange={(e) =>
+                        setVenue((v) => ({
+                          ...v,
+                          weekendExtra: {
+                            ...v.weekendExtra,
+                            percent: Math.max(0, Number(e.target.value)),
+                          },
+                        }))
+                      }
+                      className="w-24 rounded-xl border border-black/10 bg-white p-2 text-right text-sm font-bold text-prime focus:border-prime focus:outline-none"
+                    />
+                    <span className="normal-case tracking-normal text-black/40">
+                      of the hourly rate
+                    </span>
+                  </label>
+                )}
+              </div>
+
               {(Object.keys(SPORTS) as SportSlug[]).map((slug) => {
                 const held = venue.holds[slug];
                 return (

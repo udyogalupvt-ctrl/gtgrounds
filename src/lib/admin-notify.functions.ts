@@ -63,7 +63,7 @@ function composeMessage(alert: AdminAlert): { title: string; body: string; tag: 
     case "booking_created":
       return {
         title: `New booking — ${SPORTS[alert.sport].name}`,
-        body: `${alert.customerName} (${alert.customerPhone}) booked ${alert.bookingDate}, ${formatHour(alert.startHour)}–${formatHour(alert.endHour)} · ${formatINR(alert.totalAmount)}`,
+        body: `${alert.customerName} (${alert.customerPhone}) booked ${alert.bookingDate}, ${formatHour(alert.startHour)}–${formatHour(alert.endHour)} · ${formatINR(alert.totalAmount)}. Payment proof attached — verify in the dashboard.`,
         tag: `booking-${alert.bookingDate}-${alert.startHour}`,
       };
     case "payment_submitted":

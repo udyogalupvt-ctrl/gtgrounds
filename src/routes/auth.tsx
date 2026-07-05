@@ -12,6 +12,7 @@ import {
   signOutFirebase,
   signUpWithEmail,
 } from "@/lib/firebase";
+import { normalizePhone } from "@/lib/venue";
 import type { User as FirebaseUser } from "firebase/auth";
 
 export const Route = createFileRoute("/auth")({
@@ -19,11 +20,19 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-const authSchema = z.object({
+const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  fullName: z.string().trim().max(80).optional(),
-  phone: z.string().trim().max(15).optional(),
+});
+
+// Signup requires everything — the phone is what links bookings made as a
+// guest to the new account.
+const signupSchema = loginSchema.extend({
+  fullName: z.string().trim().min(2, "Enter your full name").max(80),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^[+0-9\s-]{10,15}$/, "Enter a valid phone number"),
 });
 
 function AuthPage() {
@@ -46,20 +55,31 @@ function AuthPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = authSchema.safeParse({ email, password, fullName, phone });
-    if (!parsed.success)
-      return toast.error(parsed.error.issues[0]?.message ?? "Check your details");
     setLoading(true);
     try {
       if (mode === "signup") {
+        const parsed = signupSchema.safeParse({ email, password, fullName, phone });
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Check your details");
+          return;
+        }
+        const cleanPhone = normalizePhone(parsed.data.phone);
         await signUpWithEmail(
           parsed.data.email,
           parsed.data.password,
-          parsed.data.fullName ?? "",
-          parsed.data.phone ?? "",
+          parsed.data.fullName,
+          cleanPhone,
         );
+        // Remember the phone locally too, so booking auto-fill and guest-booking
+        // matching work immediately.
+        localStorage.setItem("gt_phone", cleanPhone);
         toast.success("Account created");
       } else {
+        const parsed = loginSchema.safeParse({ email, password });
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Check your details");
+          return;
+        }
         await signInWithEmail(parsed.data.email, parsed.data.password);
         toast.success("Signed in");
       }
@@ -158,6 +178,8 @@ function AuthPage() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Full name"
+                required
+                maxLength={80}
                 className="w-full rounded-2xl border border-black/10 bg-white py-4 pl-11 pr-4 text-sm font-semibold focus:border-prime focus:outline-none"
               />
             </label>
@@ -169,6 +191,7 @@ function AuthPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email"
+              required
               className="w-full rounded-2xl border border-black/10 bg-white py-4 pl-11 pr-4 text-sm font-semibold focus:border-prime focus:outline-none"
             />
           </label>
@@ -178,7 +201,9 @@ function AuthPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
+              placeholder="Password (min 6 characters)"
+              required
+              minLength={6}
               className="w-full rounded-2xl border border-black/10 bg-white py-4 pl-11 pr-4 text-sm font-semibold focus:border-prime focus:outline-none"
             />
           </label>
@@ -188,8 +213,10 @@ function AuthPage() {
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="Phone / WhatsApp"
+                placeholder="Phone / WhatsApp (used to match your bookings)"
                 inputMode="tel"
+                required
+                maxLength={15}
                 className="w-full rounded-2xl border border-black/10 bg-white py-4 pl-11 pr-4 text-sm font-semibold focus:border-prime focus:outline-none"
               />
             </label>
