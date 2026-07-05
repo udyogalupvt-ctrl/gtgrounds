@@ -31,6 +31,7 @@ import {
   type SportsBooking,
 } from "@/lib/booking-store";
 import { onFirebaseAuth } from "@/lib/firebase";
+import { getForeignHeldHours } from "@/lib/slot-holds";
 
 export const Route = createFileRoute("/my-bookings")({
   head: () => ({ meta: [{ title: "My Bookings — GT Grounds" }] }),
@@ -296,6 +297,7 @@ function ReschedulePanel({
   const [startHour, setStartHour] = useState(b.startHour);
   const [endHour, setEndHour] = useState(b.endHour);
   const [others, setOthers] = useState<SportsBooking[]>([]);
+  const [heldHours, setHeldHours] = useState<Set<number>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -311,6 +313,11 @@ function ReschedulePanel({
       .finally(() => {
         if (!cancelled) setLoadingSlots(false);
       });
+    getForeignHeldHours(b.sport, date)
+      .then((held) => {
+        if (!cancelled) setHeldHours(held);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -365,6 +372,7 @@ function ReschedulePanel({
       <div className="mt-3">
         <SlotPicker
           occupied={occupied}
+          held={heldHours}
           startHour={startHour}
           endHour={endHour}
           minStartHour={pastCutoff}

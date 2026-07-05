@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,6 +20,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { uploadPaymentProof } from "@/lib/cloudinary";
 import { getUserProfile, onFirebaseAuth, saveUserPhone } from "@/lib/firebase";
+import {
+  HOLD_MINUTES_LABEL,
+  acquireSlotHold,
+  releaseSlotHold,
+  subscribeForeignHeldHours,
+} from "@/lib/slot-holds";
 import { buildUpiUri, generateUpiQr } from "@/lib/upi";
 import {
   getVenueConfig,
@@ -128,7 +134,9 @@ function BookingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [autoFilled, setAutoFilled] = useState(false);
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
+  const [heldHours, setHeldHours] = useState<Set<number>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(true);
+  const [holding, setHolding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -171,6 +179,37 @@ function BookingPage() {
       cancelled = true;
     };
   }, [sport, date]);
+
+  // Live view of hours other customers are holding at the payment step right
+  // now — they show as "Being booked" and can't be selected.
+  useEffect(() => {
+    let unsubscribe: undefined | (() => void);
+    let cancelled = false;
+    subscribeForeignHeldHours(sport, date, (held) => {
+      if (!cancelled) setHeldHours(held);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unsubscribe = fn;
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [sport, date]);
+
+  // Track the range this tab is holding so it's released when the customer
+  // backs out or leaves the page (holds also self-expire after 5 minutes).
+  const holdRef = useRef<{ sport: SportSlug; date: string; start: number; end: number } | null>(
+    null,
+  );
+
+  function releaseCurrentHold() {
+    const hold = holdRef.current;
+    holdRef.current = null;
+    if (hold) void releaseSlotHold(hold.sport, hold.date, hold.start, hold.end);
+  }
+
+  useEffect(() => releaseCurrentHold, []);
 
   useEffect(() => {
     getPaymentSettings()
@@ -253,22 +292,42 @@ function BookingPage() {
   const occupied = useMemo(() => occupiedHours(bookings), [bookings]);
   const pastCutoff = date === todayIsoIST() ? currentHourIST() : OPEN_HOUR;
 
+  function rangeIsHeldByOthers() {
+    for (let h = startHour; h < endHour; h++) if (heldHours.has(h)) return true;
+    return false;
+  }
+
   function continueFromTime() {
     if (isOnHold) return toast.error("This sport is currently on hold.");
     if (endHour <= startHour) return toast.error("Choose an end time after start time.");
     if (overlaps) return toast.error("This range overlaps an existing booking.");
+    if (rangeIsHeldByOthers())
+      return toast.error("Another customer is booking this slot right now. Pick a different time.");
     setStep(3);
   }
 
   // Nothing is saved yet — the booking is only created when the customer
-  // submits their payment proof in step 4.
-  function continueToPayment() {
+  // submits their payment proof in step 4. Entering the payment step places a
+  // short movie-ticket-style hold on the slot so two people can't pay for the
+  // same time.
+  async function continueToPayment() {
     if (isOnHold) return toast.error("This sport is currently on hold.");
     const parsed = contactSchema.safeParse({ name, phone, notes });
     if (!parsed.success) return toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
     if (endHour <= startHour) return toast.error("Choose a valid time range.");
     if (overlaps) return toast.error("This range overlaps an existing booking.");
-    setStep(4);
+    setHolding(true);
+    try {
+      await acquireSlotHold(sport, date, startHour, endHour);
+      holdRef.current = { sport, date, start: startHour, end: endHour };
+      setStep(4);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not reserve the slot. Try again.",
+      );
+    } finally {
+      setHolding(false);
+    }
   }
 
   // Step 1 of payment: upload the screenshot to Cloudinary only. The customer
@@ -316,6 +375,8 @@ function BookingPage() {
         },
         proof.url,
       );
+      // The booking now owns the slot — the temporary hold can go.
+      releaseCurrentHold();
       localStorage.setItem("gt_phone", normalizePhone(parsed.data.phone));
       // Remember the phone on the account so the next booking is zero-typing.
       if (user) void saveUserPhone(user.uid, normalizePhone(parsed.data.phone)).catch(() => {});
@@ -334,7 +395,11 @@ function BookingPage() {
       <TopNav />
       <div className="mx-auto max-w-2xl px-5 py-6">
         <button
-          onClick={() => (step === 1 ? window.history.back() : setStep((step - 1) as Step))}
+          onClick={() => {
+            if (step === 4) releaseCurrentHold();
+            if (step === 1) window.history.back();
+            else setStep((step - 1) as Step);
+          }}
           className="mb-4 flex items-center gap-2 text-sm font-semibold text-black/60"
         >
           <ArrowLeft className="h-4 w-4" /> Back
@@ -441,6 +506,7 @@ function BookingPage() {
             </p>
             <SlotPicker
               occupied={occupied}
+              held={heldHours}
               startHour={startHour}
               endHour={endHour}
               minStartHour={pastCutoff}
@@ -530,9 +596,11 @@ function BookingPage() {
             </label>
             <button
               onClick={continueToPayment}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground"
+              disabled={holding}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
             >
-              Continue to payment <ArrowRight className="h-4 w-4" />
+              {holding ? "Reserving your slot…" : "Continue to payment"}{" "}
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -596,7 +664,8 @@ function BookingPage() {
               </div>
             </div>
             <p className="mt-4 rounded-2xl bg-surface p-3 text-center text-xs font-semibold text-black/55">
-              Your slot is confirmed only after you upload the payment screenshot and press Submit.
+              This slot is reserved for you for {HOLD_MINUTES_LABEL} — upload the payment screenshot
+              and press Submit to confirm your booking.
             </p>
             {/* Upload → preview → submit. The screenshot uploads to Cloudinary
                 first; the booking is only created when the customer confirms. */}

@@ -523,9 +523,24 @@ function LandingPage() {
             </span>
           ))}
         </div>
-        <div className="border-t border-white/10 pt-6 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
-          © {new Date().getFullYear()} Jilani's GT Grounds &amp; Gardens · Spacious Grounds · Lush
-          Green Lawns · Premium Facilities · Ample Parking
+        <div className="border-t border-white/10 pt-6 text-center">
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
+            Spacious Grounds · Lush Green Lawns · Premium Facilities · Ample Parking
+          </p>
+          <p className="mt-5 text-xs text-white/60">
+            © {new Date().getFullYear()} Jilani's GT Grounds &amp; Gardens. All Rights Reserved.
+          </p>
+          <p className="mt-1 text-xs text-white/50">
+            Designed &amp; Developed By{" "}
+            <a
+              href="https://www.thedreamteamservices.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="font-bold tracking-wide text-sport transition-colors hover:text-white hover:underline"
+            >
+              DREAM TEAM SERVICES
+            </a>
+          </p>
         </div>
       </footer>
 

@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { notifyAdmins } from "./admin-notify.functions";
 import { getFirebaseAuth, getFirebaseDb, getUserProfile, isAdminEmail } from "./firebase";
+import { getForeignHeldHours } from "./slot-holds";
 import { getVenueConfig, weekendMultiplier } from "./venue-config-store";
 import { SportSlug, currentHourIST, normalizePhone, todayIsoIST } from "./venue";
 
@@ -147,6 +148,23 @@ export function occupiedHours(
   return set;
 }
 
+/** Throws if any hour in the range is held at the payment step by another customer. */
+async function assertNotHeldByOthers(
+  sport: SportSlug,
+  bookingDate: string,
+  startHour: number,
+  endHour: number,
+) {
+  const held = await getForeignHeldHours(sport, bookingDate).catch(() => new Set<number>());
+  for (let h = startHour; h < endHour; h++) {
+    if (held.has(h)) {
+      throw new Error(
+        "Another customer is completing payment for this slot right now. Please pick a different time.",
+      );
+    }
+  }
+}
+
 export async function getAvailability(sport: SportSlug, bookingDate: string) {
   const db = await getFirebaseDb();
   const snapshot = await getDocs(
@@ -176,6 +194,8 @@ export async function submitBookingWithProof(
   if (hasOverlap(input.startHour, input.endHour, activeBookings)) {
     throw new Error("That time was just booked by someone else. Please pick a different slot.");
   }
+  // Own hold (taken at the payment step) doesn't count — only other customers'.
+  await assertNotHeldByOthers(input.sport, input.bookingDate, input.startHour, input.endHour);
   const docRef = await addDoc(collection(db, "sportsBookings"), {
     ...input,
     userId: user?.uid ?? null,
@@ -398,6 +418,7 @@ export async function rescheduleMyBooking(
   if (hasOverlap(next.startHour, next.endHour, active)) {
     throw new Error("That time overlaps another booking. Pick a different slot.");
   }
+  await assertNotHeldByOthers(booking.sport, next.bookingDate, next.startHour, next.endHour);
 
   // Reprice for the new date (weekend surcharge only if the admin enabled it).
   const config = await getVenueConfig();

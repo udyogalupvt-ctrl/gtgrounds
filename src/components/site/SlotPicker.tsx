@@ -26,6 +26,8 @@ function slotLabel(h: number): { range: string; period: string } {
 
 type Props = {
   occupied: Set<number>;
+  /** Hours another customer is holding at the payment step right now. */
+  held?: Set<number>;
   startHour: number;
   endHour: number;
   onSelect: (start: number, end: number) => void;
@@ -36,6 +38,8 @@ type Props = {
   loading?: boolean;
 };
 
+const NO_HOLDS = new Set<number>();
+
 /**
  * Bus/train-seat style hourly slot picker. Booked hours are shown struck-out and
  * disabled; free hours are tappable. Tap one hour, then another, to select a
@@ -43,6 +47,7 @@ type Props = {
  */
 export function SlotPicker({
   occupied,
+  held = NO_HOLDS,
   startHour,
   endHour,
   onSelect,
@@ -56,7 +61,7 @@ export function SlotPicker({
   const hours: number[] = [];
   for (let h = openHour; h < closeHour; h++) hours.push(h);
 
-  const isFree = (h: number) => !occupied.has(h) && h >= minStartHour;
+  const isFree = (h: number) => !occupied.has(h) && !held.has(h) && h >= minStartHour;
   const rangeFree = (lo: number, hi: number) => {
     for (let h = lo; h <= hi; h++) if (!isFree(h)) return false;
     return true;
@@ -95,6 +100,7 @@ export function SlotPicker({
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {hours.map((h) => {
           const booked = occupied.has(h);
+          const beingBooked = !booked && held.has(h);
           const past = h < minStartHour;
           const selected = h >= startHour && h < endHour;
           const label = slotLabel(h);
@@ -102,7 +108,7 @@ export function SlotPicker({
             <button
               key={h}
               type="button"
-              disabled={booked || past}
+              disabled={booked || beingBooked || past}
               onClick={() => handleClick(h)}
               className={cn(
                 "flex h-14 flex-col items-center justify-center rounded-xl border transition-colors",
@@ -110,9 +116,11 @@ export function SlotPicker({
                   ? "border-prime bg-prime text-prime-foreground"
                   : booked
                     ? "cursor-not-allowed border-red-100 bg-red-50 text-red-400"
-                    : past
-                      ? "cursor-not-allowed border-black/5 bg-black/5 text-black/25"
-                      : "border-black/10 bg-white text-prime hover:border-prime active:scale-95",
+                    : beingBooked
+                      ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-500"
+                      : past
+                        ? "cursor-not-allowed border-black/5 bg-black/5 text-black/25"
+                        : "border-black/10 bg-white text-prime hover:border-prime active:scale-95",
               )}
             >
               <span
@@ -121,7 +129,7 @@ export function SlotPicker({
                 {label.range}
               </span>
               <span className="text-[9px] font-bold uppercase tracking-wider opacity-60">
-                {label.period}
+                {beingBooked ? "Being booked" : label.period}
               </span>
             </button>
           );
@@ -133,6 +141,9 @@ export function SlotPicker({
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded bg-prime" /> Selected
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded border border-amber-200 bg-amber-50" /> Being booked
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded border border-red-100 bg-red-50" /> Booked
