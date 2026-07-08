@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  Banknote,
   Bell,
   BellRing,
   CheckCircle2,
@@ -414,13 +415,17 @@ function AdminDashboard() {
   }
 
   function whatsappLink(b: SportsBooking) {
+    const paymentLine =
+      b.paymentMethod === "venue"
+        ? `💳 Payment: Pay ${formatINR(b.totalAmount)} at the venue`
+        : `💳 Payment: Received (${formatINR(b.totalAmount)})`;
     const msg = `Hi ${b.customerName}! ✅ Your booking at Jilani's GT Grounds is CONFIRMED.
 📅 ${formatDateLong(b.bookingDate)}
 ⏰ ${formatHour(b.startHour)} – ${formatHour(b.endHour)}
 🏟️ ${SPORTS[b.sport].name}
-💳 Payment: Received (${formatINR(b.totalAmount)})
+${paymentLine}
 📍 Location: https://maps.app.goo.gl/Ycke5SbvAQG6gbam6?g_st=ic
-Please arrive 10 minutes early. Contact: +91 87121 43183`;
+Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
     const phone = b.customerPhone.replace(/[^0-9]/g, "");
     return `https://wa.me/${phone.startsWith("91") ? phone : "91" + phone}?text=${encodeURIComponent(msg)}`;
   }
@@ -666,16 +671,27 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                       >
                         {statusLabel(b.status)}
                       </span>
+                      {b.paymentMethod === "venue" && (
+                        <span className="mt-1 flex items-center justify-end gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                          <Banknote className="h-3 w-3" /> Pay at venue
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {b.paymentProofUrl && (
+                    {b.paymentProofUrl ? (
                       <button
                         onClick={() => viewScreenshot(b)}
                         className="flex items-center gap-1 rounded-lg bg-black/5 px-3 py-1.5 text-xs font-bold"
                       >
                         <ImageIcon className="h-3 w-3" /> Payment Proof
                       </button>
+                    ) : (
+                      b.paymentMethod === "venue" && (
+                        <span className="flex items-center gap-1 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">
+                          <Banknote className="h-3 w-3" /> Collect at venue
+                        </span>
+                      )
                     )}
                     {b.status !== "approved" && (
                       <button
@@ -1256,7 +1272,7 @@ Please arrive 10 minutes early. Contact: +91 87121 43183`;
                       paymentPhone: e.target.value,
                     })
                   }
-                  placeholder="+91 87121 43183"
+                  placeholder="+91 81214 03183"
                   className="mt-1 w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-normal text-prime focus:border-prime focus:outline-none"
                 />
               </label>

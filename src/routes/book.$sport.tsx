@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Banknote,
   CalendarDays,
   Check,
   Clock,
   Lock,
   Phone,
+  QrCode,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -40,6 +42,8 @@ import {
   hasOverlap,
   occupiedHours,
   submitBookingWithProof,
+  submitVenueBooking,
+  type PaymentMethod,
   type PaymentSettings,
   type SportsBooking,
 } from "@/lib/booking-store";
@@ -140,6 +144,7 @@ function BookingPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
   const [proof, setProof] = useState<{ url: string; isVideo: boolean } | null>(null);
   const [settings, setSettings] = useState<PaymentSettings | null>(null);
   const [basePrice, setBasePrice] = useState<number>(SPORT_PRICES[sport]);
@@ -218,7 +223,7 @@ function BookingPage() {
         setSettings({
           upiId: "jilanigt@upi",
           upiName: "Jilanis GT Grounds",
-          paymentPhone: "+91 87121 43183",
+          paymentPhone: "+91 81214 03183",
           qrCodeUrl: null,
         }),
       );
@@ -352,35 +357,43 @@ function BookingPage() {
     setUploadProgress(0);
   }
 
-  // Step 2 of payment: THE commit point — the booking record is created here,
-  // together with the proof, and the admin is notified once.
-  async function submitProof() {
-    if (!proof) return;
+  // THE commit point — the booking record is created here (online with the
+  // uploaded proof, or pay-at-venue with no proof) and the admin is notified.
+  async function finalizeBooking() {
     const parsed = contactSchema.safeParse({ name, phone, notes });
     if (!parsed.success) return toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
+    if (paymentMethod === "upi" && !proof) {
+      return toast.error("Upload your payment screenshot, or choose Pay at venue.");
+    }
     setSubmitting(true);
     try {
-      await submitBookingWithProof(
-        {
-          sport,
-          bookingDate: date,
-          startHour,
-          endHour,
-          totalHours: hours,
-          pricePerHour,
-          totalAmount: total,
-          customerName: parsed.data.name.trim(),
-          customerPhone: normalizePhone(parsed.data.phone),
-          notes: parsed.data.notes?.trim() || null,
-        },
-        proof.url,
-      );
+      const bookingInput = {
+        sport,
+        bookingDate: date,
+        startHour,
+        endHour,
+        totalHours: hours,
+        pricePerHour,
+        totalAmount: total,
+        customerName: parsed.data.name.trim(),
+        customerPhone: normalizePhone(parsed.data.phone),
+        notes: parsed.data.notes?.trim() || null,
+      };
+      if (paymentMethod === "venue") {
+        await submitVenueBooking(bookingInput);
+      } else {
+        await submitBookingWithProof(bookingInput, proof!.url);
+      }
       // The booking now owns the slot — the temporary hold can go.
       releaseCurrentHold();
       localStorage.setItem("gt_phone", normalizePhone(parsed.data.phone));
       // Remember the phone on the account so the next booking is zero-typing.
       if (user) void saveUserPhone(user.uid, normalizePhone(parsed.data.phone)).catch(() => {});
-      toast.success("Booking submitted! We'll verify your payment shortly.");
+      toast.success(
+        paymentMethod === "venue"
+          ? "Booking submitted! Pay at the venue when you arrive."
+          : "Booking submitted! We'll verify your payment shortly.",
+      );
       setTimeout(() => navigate({ to: "/my-bookings" }), 1000);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not submit. Try again.");
@@ -616,143 +629,203 @@ function BookingPage() {
                 {s.name} · {formatDateShort(date)} · {formatHour(startHour)}–{formatHour(endHour)}
               </p>
             </div>
-            <div className="mt-6 rounded-3xl border border-black/5 bg-surface p-6 text-center">
-              {settings?.qrCodeUrl ? (
-                <img
-                  src={settings.qrCodeUrl}
-                  alt="UPI QR"
-                  className="mx-auto h-48 w-48 rounded-xl bg-white object-contain p-2"
+
+            {/* Payment method choice */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("upi")}
+                className={`flex flex-col items-center gap-1 rounded-2xl border-2 p-4 text-center transition-colors ${paymentMethod === "upi" ? "border-prime bg-prime/5" : "border-black/10 bg-white"}`}
+              >
+                <QrCode
+                  className={`h-5 w-5 ${paymentMethod === "upi" ? "text-prime" : "text-black/40"}`}
                 />
-              ) : qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt="Scan to pay via UPI"
-                  className="mx-auto h-48 w-48 rounded-xl bg-white object-contain p-2"
+                <span className="text-sm font-bold">Pay online</span>
+                <span className="text-[10px] text-black/50">UPI + screenshot</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("venue")}
+                className={`flex flex-col items-center gap-1 rounded-2xl border-2 p-4 text-center transition-colors ${paymentMethod === "venue" ? "border-prime bg-prime/5" : "border-black/10 bg-white"}`}
+              >
+                <Banknote
+                  className={`h-5 w-5 ${paymentMethod === "venue" ? "text-prime" : "text-black/40"}`}
                 />
-              ) : (
-                <div className="mx-auto grid h-48 w-48 animate-pulse place-items-center rounded-xl border-2 border-dashed border-black/15 text-xs text-black/40">
-                  Generating QR…
-                </div>
-              )}
-              <p className="mt-3 text-[11px] text-black/40">
-                Scan with any UPI app — amount is pre-filled
-              </p>
-              <p className="mt-4 text-xs font-bold uppercase tracking-widest text-black/40">
-                UPI ID
-              </p>
-              <p className="text-lg font-bold">{settings?.upiId ?? "jilanigt@upi"}</p>
-              <p className="text-xs text-black/50">{settings?.upiName ?? "Jilanis GT Grounds"}</p>
-              {settings?.paymentPhone && (
-                <a
-                  href={`tel:${settings.paymentPhone.replace(/\s+/g, "")}`}
-                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-prime ring-1 ring-black/10"
-                >
-                  <Phone className="h-3.5 w-3.5" /> {settings.paymentPhone}
-                </a>
-              )}
-              <div className="mt-4">
-                <a
-                  href={buildUpiUri({
-                    upiId: settings?.upiId ?? "jilanigt@upi",
-                    upiName: settings?.upiName ?? "GT Grounds",
-                    amount: total,
-                  })}
-                  className="inline-block rounded-xl bg-prime px-6 py-3 text-xs font-bold uppercase tracking-widest text-prime-foreground"
-                >
-                  Open UPI App
-                </a>
-              </div>
+                <span className="text-sm font-bold">Pay at venue</span>
+                <span className="text-[10px] text-black/50">Cash / UPI on arrival</span>
+              </button>
             </div>
-            <p className="mt-4 rounded-2xl bg-surface p-3 text-center text-xs font-semibold text-black/55">
-              This slot is reserved for you for {HOLD_MINUTES_LABEL} — upload the payment screenshot
-              and press Submit to confirm your booking.
-            </p>
-            {/* Upload → preview → submit. The screenshot uploads to Cloudinary
-                first; the booking is only created when the customer confirms. */}
-            {proof ? (
-              <div className="mt-6 rounded-3xl border border-black/10 bg-white p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-bold text-emerald-700">
-                  <Check className="h-5 w-5" /> Screenshot ready — review below
+
+            {paymentMethod === "venue" ? (
+              <div className="mt-6">
+                <div className="rounded-3xl border border-black/5 bg-surface p-6 text-center">
+                  <span className="mx-auto grid size-12 place-items-center rounded-full bg-prime/10 text-prime">
+                    <Banknote className="h-6 w-6" />
+                  </span>
+                  <p className="mt-3 text-sm font-bold">Pay {formatINR(total)} at the venue</p>
+                  <p className="mt-1 text-xs text-black/55">
+                    We'll hold your slot. Pay by cash or UPI when you arrive — no screenshot needed.
+                    Our team confirms your booking on WhatsApp.
+                  </p>
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-black/5 bg-black/5">
-                  {proof.isVideo ? (
-                    <video
-                      src={proof.url}
-                      controls
-                      className="max-h-80 w-full bg-black object-contain"
+                <p className="mt-4 rounded-2xl bg-surface p-3 text-center text-xs font-semibold text-black/55">
+                  This slot is reserved for you for {HOLD_MINUTES_LABEL} — press Confirm to lock
+                  your booking.
+                </p>
+                <button
+                  type="button"
+                  onClick={finalizeBooking}
+                  disabled={submitting}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
+                >
+                  {submitting ? "Confirming…" : "Confirm booking"} <Check className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="mt-6 rounded-3xl border border-black/5 bg-surface p-6 text-center">
+                  {settings?.qrCodeUrl ? (
+                    <img
+                      src={settings.qrCodeUrl}
+                      alt="UPI QR"
+                      className="mx-auto h-48 w-48 rounded-xl bg-white object-contain p-2"
+                    />
+                  ) : qrDataUrl ? (
+                    <img
+                      src={qrDataUrl}
+                      alt="Scan to pay via UPI"
+                      className="mx-auto h-48 w-48 rounded-xl bg-white object-contain p-2"
                     />
                   ) : (
-                    <img
-                      src={proof.url}
-                      alt="Your payment screenshot"
-                      className="max-h-80 w-full object-contain"
-                    />
+                    <div className="mx-auto grid h-48 w-48 animate-pulse place-items-center rounded-xl border-2 border-dashed border-black/15 text-xs text-black/40">
+                      Generating QR…
+                    </div>
                   )}
+                  <p className="mt-3 text-[11px] text-black/40">
+                    Scan with any UPI app — amount is pre-filled
+                  </p>
+                  <p className="mt-4 text-xs font-bold uppercase tracking-widest text-black/40">
+                    UPI ID
+                  </p>
+                  <p className="text-lg font-bold">{settings?.upiId ?? "jilanigt@upi"}</p>
+                  <p className="text-xs text-black/50">
+                    {settings?.upiName ?? "Jilanis GT Grounds"}
+                  </p>
+                  {settings?.paymentPhone && (
+                    <a
+                      href={`tel:${settings.paymentPhone.replace(/\s+/g, "")}`}
+                      className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-prime ring-1 ring-black/10"
+                    >
+                      <Phone className="h-3.5 w-3.5" /> {settings.paymentPhone}
+                    </a>
+                  )}
+                  <div className="mt-4">
+                    <a
+                      href={buildUpiUri({
+                        upiId: settings?.upiId ?? "jilanigt@upi",
+                        upiName: settings?.upiName ?? "GT Grounds",
+                        amount: total,
+                      })}
+                      className="inline-block rounded-xl bg-prime px-6 py-3 text-xs font-bold uppercase tracking-widest text-prime-foreground"
+                    >
+                      Open UPI App
+                    </a>
+                  </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={removeProof}
-                    disabled={submitting}
-                    className="flex items-center justify-center gap-2 rounded-2xl border border-black/15 bg-white py-4 text-sm font-bold text-black/70 transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-40"
+                <p className="mt-4 rounded-2xl bg-surface p-3 text-center text-xs font-semibold text-black/55">
+                  This slot is reserved for you for {HOLD_MINUTES_LABEL} — upload the payment
+                  screenshot and press Submit to confirm your booking.
+                </p>
+                {/* Upload → preview → submit. The screenshot uploads to Cloudinary
+                first; the booking is only created when the customer confirms. */}
+                {proof ? (
+                  <div className="mt-6 rounded-3xl border border-black/10 bg-white p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-bold text-emerald-700">
+                      <Check className="h-5 w-5" /> Screenshot ready — review below
+                    </div>
+                    <div className="overflow-hidden rounded-2xl border border-black/5 bg-black/5">
+                      {proof.isVideo ? (
+                        <video
+                          src={proof.url}
+                          controls
+                          className="max-h-80 w-full bg-black object-contain"
+                        />
+                      ) : (
+                        <img
+                          src={proof.url}
+                          alt="Your payment screenshot"
+                          className="max-h-80 w-full object-contain"
+                        />
+                      )}
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={removeProof}
+                        disabled={submitting}
+                        className="flex items-center justify-center gap-2 rounded-2xl border border-black/15 bg-white py-4 text-sm font-bold text-black/70 transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-4 w-4" /> Remove
+                      </button>
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-black/15 bg-white py-4 text-sm font-bold text-black/70 transition-colors hover:border-prime hover:text-prime">
+                        <input
+                          type="file"
+                          accept="image/*,video/*"
+                          className="hidden"
+                          disabled={submitting}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleUpload(f);
+                          }}
+                        />
+                        <Upload className="h-4 w-4" /> Replace
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={finalizeBooking}
+                      disabled={submitting}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
+                    >
+                      {submitting ? "Submitting…" : "Submit booking"} <Check className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    className={`mt-6 block rounded-3xl border-2 border-dashed border-black/15 bg-white p-6 text-center transition-colors ${uploading ? "cursor-default" : "cursor-pointer hover:border-prime"}`}
                   >
-                    <Trash2 className="h-4 w-4" /> Remove
-                  </button>
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-black/15 bg-white py-4 text-sm font-bold text-black/70 transition-colors hover:border-prime hover:text-prime">
                     <input
                       type="file"
                       accept="image/*,video/*"
                       className="hidden"
-                      disabled={submitting}
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) handleUpload(f);
                       }}
+                      disabled={uploading}
                     />
-                    <Upload className="h-4 w-4" /> Replace
+                    {uploading ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <span className="text-sm font-bold">Uploading… {uploadProgress}%</span>
+                        <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-black/10">
+                          <span
+                            className="block h-full rounded-full bg-prime transition-all duration-200"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="h-6 w-6 text-black/50" />
+                        <span className="text-sm font-bold">
+                          Upload payment screenshot or video
+                        </span>
+                        <span className="text-xs text-black/50">PNG, JPG, or short video</span>
+                      </div>
+                    )}
                   </label>
-                </div>
-                <button
-                  type="button"
-                  onClick={submitProof}
-                  disabled={submitting}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-prime py-5 text-sm font-bold uppercase tracking-widest text-prime-foreground disabled:opacity-40"
-                >
-                  {submitting ? "Submitting…" : "Submit booking"} <Check className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <label
-                className={`mt-6 block rounded-3xl border-2 border-dashed border-black/15 bg-white p-6 text-center transition-colors ${uploading ? "cursor-default" : "cursor-pointer hover:border-prime"}`}
-              >
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUpload(f);
-                  }}
-                  disabled={uploading}
-                />
-                {uploading ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <span className="text-sm font-bold">Uploading… {uploadProgress}%</span>
-                    <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-black/10">
-                      <span
-                        className="block h-full rounded-full bg-prime transition-all duration-200"
-                        style={{ width: `${uploadProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Upload className="h-6 w-6 text-black/50" />
-                    <span className="text-sm font-bold">Upload payment screenshot or video</span>
-                    <span className="text-xs text-black/50">PNG, JPG, or short video</span>
-                  </div>
                 )}
-              </label>
+              </>
             )}
           </div>
         )}

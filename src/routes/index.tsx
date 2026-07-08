@@ -465,7 +465,7 @@ function LandingPage() {
         </div>
         <div className="mb-8 grid gap-3">
           <a
-            href="https://wa.me/918712143183"
+            href="https://wa.me/918121403183"
             target="_blank"
             rel="noreferrer"
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-4"
@@ -473,16 +473,16 @@ function LandingPage() {
             <span className="flex items-center gap-3 text-sm font-bold">
               <Users className="h-4 w-4 text-sport" /> WhatsApp
             </span>
-            <span className="text-[11px] font-mono uppercase text-sport">+91 87121 43183</span>
+            <span className="text-[11px] font-mono uppercase text-sport">+91 81214 03183</span>
           </a>
           <a
-            href="tel:+918712143183"
+            href="tel:+918121403183"
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-4"
           >
             <span className="flex items-center gap-3 text-sm font-bold">
               <Phone className="h-4 w-4 text-sport" /> Bookings
             </span>
-            <span className="text-[11px] font-mono uppercase text-white/70">+91 87121 43183</span>
+            <span className="text-[11px] font-mono uppercase text-white/70">+91 81214 03183</span>
           </a>
           <a
             href="tel:+918499817867"

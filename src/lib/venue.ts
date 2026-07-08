@@ -52,6 +52,14 @@ export const SPORT_PRICES: Record<SportSlug, number> = {
 export const OPEN_HOUR = 0;
 export const CLOSE_HOUR = 24;
 
+// Venue contact numbers. `wa` is the bare digits used in wa.me links, `display`
+// is the human-readable form, `tel` is the dialable form.
+export const CONTACT = {
+  bookings: { display: "+91 81214 03183", tel: "+918121403183", wa: "918121403183" },
+  enquiries: { display: "+91 84998 17867", tel: "+918499817867", wa: "918499817867" },
+  mapsUrl: "https://maps.app.goo.gl/Ycke5SbvAQG6gbam6?g_st=ic",
+};
+
 export function normalizePhone(phone: string) {
   return phone.trim().replace(/\s+/g, " ");
 }

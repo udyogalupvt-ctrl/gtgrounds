@@ -29,6 +29,9 @@ export type BookingStatus =
   | "cancelled"
   | "completed";
 
+/** "upi" = paid online with an uploaded screenshot; "venue" = paying on arrival. */
+export type PaymentMethod = "upi" | "venue";
+
 export type SportsBooking = {
   id: string;
   sport: SportSlug;
@@ -43,6 +46,7 @@ export type SportsBooking = {
   customerPhone: string;
   notes: string | null;
   paymentProofUrl: string | null;
+  paymentMethod: PaymentMethod;
   userId: string | null;
   createdAt: string;
 };
@@ -102,6 +106,8 @@ function mapBooking(snap: QueryDocumentSnapshot<DocumentData>): SportsBooking {
     customerPhone: d.customerPhone ?? "",
     notes: d.notes ?? null,
     paymentProofUrl: d.paymentProofUrl ?? null,
+    // Older bookings predate the field — default them to online payment.
+    paymentMethod: (d.paymentMethod as PaymentMethod) ?? "upi",
     userId: d.userId ?? null,
     createdAt: timestampToIso(d.createdAt),
   };
@@ -177,16 +183,21 @@ export async function getAvailability(sport: SportSlug, bookingDate: string) {
   return snapshot.docs.map(mapBooking).filter((booking) => ACTIVE_STATUSES.has(booking.status));
 }
 
+type NewBookingInput = Omit<
+  SportsBooking,
+  "id" | "status" | "paymentProofUrl" | "paymentMethod" | "createdAt" | "userId"
+>;
+
 /**
- * Creates the booking together with its payment proof, in one step. Nothing is
- * written to Firestore before this point — a booking only exists once the
- * customer has uploaded proof and pressed Submit, so the admin never sees
+ * Creates a booking. Nothing is written to Firestore before this point — a
+ * booking only exists once the customer presses Submit, so the admin never sees
  * half-finished "pending payment" ghosts. The slot is re-checked for overlaps
- * at this moment since it wasn't held during payment.
+ * and foreign holds at this moment since it wasn't held during payment.
  */
-export async function submitBookingWithProof(
-  input: Omit<SportsBooking, "id" | "status" | "paymentProofUrl" | "createdAt" | "userId">,
-  paymentProofUrl: string,
+async function createBooking(
+  input: NewBookingInput,
+  paymentMethod: PaymentMethod,
+  paymentProofUrl: string | null,
 ) {
   const db = await getFirebaseDb();
   const user = (await getFirebaseAuth()).currentUser;
@@ -201,6 +212,7 @@ export async function submitBookingWithProof(
     userId: user?.uid ?? null,
     status: "payment_submitted" satisfies BookingStatus,
     paymentProofUrl,
+    paymentMethod,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -217,6 +229,16 @@ export async function submitBookingWithProof(
     },
   }).catch(() => {});
   return docRef.id;
+}
+
+/** Online-payment booking: created with the uploaded payment screenshot. */
+export function submitBookingWithProof(input: NewBookingInput, paymentProofUrl: string) {
+  return createBooking(input, "upi", paymentProofUrl);
+}
+
+/** Pay-at-venue booking: reserved now, paid on arrival — no screenshot needed. */
+export function submitVenueBooking(input: NewBookingInput) {
+  return createBooking(input, "venue", null);
 }
 
 export async function getBookingsByPhone(phone: string) {
@@ -496,6 +518,7 @@ export async function adminCreateBooking(input: {
     customerPhone: input.customerPhone,
     notes: "Booked by admin",
     paymentProofUrl: null,
+    paymentMethod: "venue" satisfies PaymentMethod,
     userId: null,
     createdBy: auth.currentUser?.uid ?? null,
     createdAt: serverTimestamp(),
@@ -510,7 +533,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
     return {
       upiId: "jilanigt@upi",
       upiName: "Jilanis GT Grounds",
-      paymentPhone: "+91 87121 43183",
+      paymentPhone: "+91 81214 03183",
       qrCodeUrl: null,
     };
   }
@@ -518,7 +541,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
   return {
     upiId: d.upiId ?? "jilanigt@upi",
     upiName: d.upiName ?? "Jilanis GT Grounds",
-    paymentPhone: d.paymentPhone ?? "+91 87121 43183",
+    paymentPhone: d.paymentPhone ?? "+91 81214 03183",
     qrCodeUrl: d.qrCodeUrl ?? null,
   };
 }

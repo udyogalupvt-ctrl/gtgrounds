@@ -43,7 +43,7 @@ function MyBookings() {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<SportsBooking[] | null>(null);
-  const [adminPhone, setAdminPhone] = useState("+91 87121 43183");
+  const [adminPhone, setAdminPhone] = useState("+91 81214 03183");
 
   async function refresh(currentUser: User | null) {
     if (currentUser) {

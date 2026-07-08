@@ -18,7 +18,7 @@ function ContactPage() {
 
         <div className="mt-6 grid gap-3">
           <a
-            href="https://wa.me/918712143183"
+            href="https://wa.me/918121403183"
             className="flex items-center gap-4 rounded-2xl border border-black/5 bg-surface p-4"
           >
             <span className="grid size-11 place-items-center rounded-xl bg-emerald-500 text-white">
@@ -26,11 +26,11 @@ function ContactPage() {
             </span>
             <div>
               <p className="text-sm font-bold">WhatsApp</p>
-              <p className="text-xs text-black/50">+91 87121 43183</p>
+              <p className="text-xs text-black/50">+91 81214 03183</p>
             </div>
           </a>
           <a
-            href="tel:+918712143183"
+            href="tel:+918121403183"
             className="flex items-center gap-4 rounded-2xl border border-black/5 bg-surface p-4"
           >
             <span className="grid size-11 place-items-center rounded-xl bg-prime text-white">
@@ -38,7 +38,7 @@ function ContactPage() {
             </span>
             <div>
               <p className="text-sm font-bold">Bookings</p>
-              <p className="text-xs text-black/50">+91 87121 43183</p>
+              <p className="text-xs text-black/50">+91 81214 03183</p>
             </div>
           </a>
           <a
