@@ -40,6 +40,8 @@ import {
   type FunctionInquiry,
   type PaymentSettings,
   type SportsBooking,
+  type getAvailability,
+  submitAdminBlock,
 } from "@/lib/booking-store";
 import { AdminTodaySlots } from "@/components/site/AdminTodaySlots";
 
@@ -638,6 +640,7 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
 
         {tab === "sports" && (
           <div className="mt-6">
+            <AdminBlockSlotForm />
             <AdminTodaySlots bookings={bookings} prices={venue.prices} />
             <div className="mb-4 flex flex-col gap-2 sm:flex-row">
               <input
@@ -1702,6 +1705,125 @@ function StatCard({
         {label}
       </p>
       <p className="mt-1 text-xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function AdminBlockSlotForm() {
+  const [open, setOpen] = useState(false);
+  const [sport, setSport] = useState<SportSlug>("box_cricket");
+  const [date, setDate] = useState(todayIsoIST());
+  const [startHour, setStartHour] = useState(18);
+  const [endHour, setEndHour] = useState(19);
+  const [loading, setLoading] = useState(false);
+
+  async function handleBlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (endHour <= startHour) {
+      toast.error("End time must be after start time");
+      return;
+    }
+    setLoading(true);
+    try {
+      await submitAdminBlock({
+        sport,
+        bookingDate: date,
+        startHour,
+        endHour,
+        totalHours: endHour - startHour,
+      });
+      toast.success("Slot blocked successfully");
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to block slot");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mb-6">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-prime px-4 py-2 text-sm font-bold uppercase tracking-wider text-white transition-transform active:scale-95"
+        >
+          <Lock className="h-4 w-4" /> Block a Slot
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6 rounded-2xl border border-prime/10 bg-prime/5 p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-bold">Block a Slot</h3>
+        <button onClick={() => setOpen(false)} className="text-black/50 hover:text-black">
+          <XCircle className="h-5 w-5" />
+        </button>
+      </div>
+      <form onSubmit={handleBlock} className="grid gap-4 sm:grid-cols-5 sm:items-end">
+        <div>
+          <label className="mb-1 block text-xs font-bold uppercase text-black/60">Sport</label>
+          <select
+            value={sport}
+            onChange={(e) => setSport(e.target.value as SportSlug)}
+            className="w-full rounded-xl border border-black/10 p-2.5 text-sm outline-none focus:border-prime"
+          >
+            {Object.values(SPORTS).map((s) => (
+              <option key={s.slug} value={s.slug}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-bold uppercase text-black/60">Date</label>
+          <input
+            type="date"
+            value={date}
+            min={todayIsoIST()}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full rounded-xl border border-black/10 p-2.5 text-sm outline-none focus:border-prime"
+            required
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-bold uppercase text-black/60">Start Time</label>
+          <select
+            value={startHour}
+            onChange={(e) => setStartHour(Number(e.target.value))}
+            className="w-full rounded-xl border border-black/10 p-2.5 text-sm outline-none focus:border-prime"
+          >
+            {Array.from({ length: 24 }).map((_, i) => (
+              <option key={i} value={i}>
+                {formatHour(i)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-bold uppercase text-black/60">End Time</label>
+          <select
+            value={endHour}
+            onChange={(e) => setEndHour(Number(e.target.value))}
+            className="w-full rounded-xl border border-black/10 p-2.5 text-sm outline-none focus:border-prime"
+          >
+            {Array.from({ length: 24 }).map((_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {formatHour(i + 1)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-xl bg-prime p-2.5 text-sm font-bold uppercase text-white transition-opacity disabled:opacity-50"
+        >
+          {loading ? "Saving..." : "Block Slot"}
+        </button>
+      </form>
     </div>
   );
 }

@@ -241,6 +241,32 @@ export function submitVenueBooking(input: NewBookingInput) {
   return createBooking(input, "venue", null);
 }
 
+/** Admin blocking a slot. Directly marks it as approved without payment. */
+export async function submitAdminBlock(input: Pick<NewBookingInput, "sport" | "bookingDate" | "startHour" | "endHour" | "totalHours">) {
+  const db = await getFirebaseDb();
+  const user = (await getFirebaseAuth()).currentUser;
+  const activeBookings = await getAvailability(input.sport, input.bookingDate);
+  if (hasOverlap(input.startHour, input.endHour, activeBookings)) {
+    throw new Error("That time is already booked or blocked.");
+  }
+  
+  const docRef = await addDoc(collection(db, "sportsBookings"), {
+    ...input,
+    pricePerHour: 0,
+    totalAmount: 0,
+    customerName: "Admin Block",
+    customerPhone: "0000000000",
+    notes: "Blocked by admin",
+    userId: user?.uid ?? null,
+    status: "approved" satisfies BookingStatus,
+    paymentProofUrl: null,
+    paymentMethod: "venue",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
 export async function getBookingsByPhone(phone: string) {
   const db = await getFirebaseDb();
   const snapshot = await getDocs(
