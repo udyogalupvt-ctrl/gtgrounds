@@ -11,9 +11,13 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  collection,
   doc,
   getDoc,
   getFirestore,
+  onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   type Firestore,
@@ -117,12 +121,14 @@ export async function signInWithEmail(email: string, password: string) {
 }
 
 export async function signInWithGoogle() {
+  const { getAdditionalUserInfo } = await import("firebase/auth");
   const auth = await getFirebaseAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   const credential = await signInWithPopup(auth, provider);
+  const isNew = getAdditionalUserInfo(credential)?.isNewUser ?? false;
   await upsertUserProfile(credential.user);
-  return credential.user;
+  return { user: credential.user, isNew };
 }
 
 export async function signOutFirebase() {
@@ -154,4 +160,87 @@ export async function updateUserDisplayName(fullName: string) {
     { fullName, updatedAt: serverTimestamp() },
     { merge: true },
   );
+}
+
+/** A registered user profile as stored in Firestore. */
+export type RegisteredUser = {
+  uid: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  provider: string;
+  photoURL: string;
+  isAdmin: boolean;
+  disabled: boolean;
+  createdAt: string; // ISO string or Firestore timestamp
+};
+
+/**
+ * Subscribe to all user profiles in real time (for admin dashboard).
+ * Returns an unsubscribe function.
+ */
+export async function subscribeAllUsers(
+  onData: (users: RegisteredUser[]) => void,
+  onError?: (err: Error) => void,
+) {
+  const db = await getFirebaseDb();
+  const q = query(collection(db, "userProfiles"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const users: RegisteredUser[] = snapshot.docs.map((d) => {
+        const data = d.data();
+        // Normalize createdAt from Firestore Timestamp to ISO string
+        let createdAt = "";
+        if (data.createdAt?.toDate) {
+          createdAt = data.createdAt.toDate().toISOString();
+        } else if (typeof data.createdAt === "string") {
+          createdAt = data.createdAt;
+        }
+        return {
+          uid: data.uid ?? d.id,
+          email: data.email ?? "",
+          fullName: data.fullName ?? "",
+          phone: data.phone ?? "",
+          provider: data.provider ?? "",
+          photoURL: data.photoURL ?? "",
+          isAdmin: data.isAdmin ?? false,
+          disabled: data.disabled ?? false,
+          createdAt,
+        };
+      });
+      // Filter out admin users so only customer registrations show
+      onData(users.filter((u) => !u.isAdmin));
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
+}
+
+/** Disable a user (sets disabled flag on their profile). */
+export async function disableUserProfile(uid: string) {
+  const db = await getFirebaseDb();
+  await setDoc(
+    doc(db, "userProfiles", uid),
+    { disabled: true, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+/** Re-enable a disabled user. */
+export async function enableUserProfile(uid: string) {
+  const db = await getFirebaseDb();
+  await setDoc(
+    doc(db, "userProfiles", uid),
+    { disabled: false, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+/** Permanently delete a user's profile document. */
+export async function deleteUserProfile(uid: string) {
+  const { deleteDoc } = await import("firebase/firestore");
+  const db = await getFirebaseDb();
+  await deleteDoc(doc(db, "userProfiles", uid));
 }

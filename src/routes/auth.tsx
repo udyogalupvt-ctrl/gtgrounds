@@ -14,6 +14,7 @@ import {
 } from "@/lib/firebase";
 import { normalizePhone } from "@/lib/venue";
 import type { User as FirebaseUser } from "firebase/auth";
+import { notifyAdmins } from "@/lib/admin-notify.functions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Login & Google Signup — GT Grounds" }] }),
@@ -74,6 +75,16 @@ function AuthPage() {
         // matching work immediately.
         localStorage.setItem("gt_phone", cleanPhone);
         toast.success("Account created");
+        // Notify admin about new registration (fire and forget)
+        notifyAdmins({
+          data: {
+            kind: "user_registered",
+            fullName: parsed.data.fullName,
+            email: parsed.data.email,
+            phone: cleanPhone,
+            provider: "email",
+          },
+        }).catch(() => {});
       } else {
         const parsed = loginSchema.safeParse({ email, password });
         if (!parsed.success) {
@@ -94,8 +105,20 @@ function AuthPage() {
   async function google() {
     setLoading(true);
     try {
-      await signInWithGoogle();
+      const { user: gUser, isNew } = await signInWithGoogle();
       toast.success("Signed in with Google");
+      if (isNew) {
+        // Notify admin about new Google registration (fire and forget)
+        notifyAdmins({
+          data: {
+            kind: "user_registered",
+            fullName: gUser.displayName || "",
+            email: gUser.email || "",
+            phone: "",
+            provider: "google",
+          },
+        }).catch(() => {});
+      }
       navigate({ to: "/my-bookings" });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Google sign-in failed");

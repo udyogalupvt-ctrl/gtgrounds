@@ -54,6 +54,13 @@ const alertSchema = z.discriminatedUnion("kind", [
     customerName: z.string().max(120),
     customerPhone: z.string().max(40),
   }),
+  z.object({
+    kind: z.literal("user_registered"),
+    fullName: z.string().max(120),
+    email: z.string().max(200),
+    phone: z.string().max(40),
+    provider: z.string().max(40),
+  }),
 ]);
 
 type AdminAlert = z.infer<typeof alertSchema>;
@@ -89,6 +96,12 @@ function composeMessage(alert: AdminAlert): { title: string; body: string; tag: 
         title: `Booking rescheduled — ${SPORTS[alert.sport].name}`,
         body: `${alert.customerName} (${alert.customerPhone}) moved ${alert.oldDate} ${formatHour(alert.oldStartHour)}–${formatHour(alert.oldEndHour)} → ${alert.bookingDate} ${formatHour(alert.startHour)}–${formatHour(alert.endHour)} · ${formatINR(alert.totalAmount)}`,
         tag: `reschedule-${alert.bookingDate}-${alert.startHour}`,
+      };
+    case "user_registered":
+      return {
+        title: `New user registered`,
+        body: `${alert.fullName || "A user"} (${alert.email})${alert.phone ? ` · ${alert.phone}` : ""} just signed up via ${alert.provider}.`,
+        tag: `signup-${alert.email}`,
       };
   }
 }

@@ -16,6 +16,7 @@ import {
 import { TopNav } from "@/components/site/TopNav";
 import { BottomNav } from "@/components/site/BottomNav";
 import { SlotPicker } from "@/components/site/SlotPicker";
+import { SportPickerSheet } from "@/components/site/SportPickerSheet";
 import { SPORTS, currentHourIST, formatDateShort, formatINR, todayIsoIST } from "@/lib/venue";
 import { getAvailability, occupiedHours } from "@/lib/booking-store";
 import { getPublicAnnouncements, type Announcement } from "@/lib/content-store";
@@ -64,6 +65,7 @@ function LandingPage() {
   const [venueLoaded, setVenueLoaded] = useState(false);
   const [quickOccupied, setQuickOccupied] = useState<Set<number>>(new Set());
   const [slotsLoading, setSlotsLoading] = useState(true);
+  const [sportPickerOpen, setSportPickerOpen] = useState(false);
 
   useEffect(() => {
     getVenueConfig()
@@ -131,13 +133,12 @@ function LandingPage() {
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <Link
-            to="/book/$sport"
-            params={{ sport: "box_cricket" }}
+          <button
+            onClick={() => setSportPickerOpen(true)}
             className="rounded-2xl bg-prime py-5 text-center text-sm font-bold uppercase tracking-widest text-prime-foreground shadow-xl shadow-black/10 transition-transform active:scale-95"
           >
             Book Sports
-          </Link>
+          </button>
           <Link
             to="/function"
             className="rounded-2xl border-2 border-prime bg-white py-5 text-center text-sm font-bold uppercase tracking-widest transition-transform active:scale-95"
@@ -544,6 +545,7 @@ function LandingPage() {
         </div>
       </footer>
 
+      <SportPickerSheet open={sportPickerOpen} onClose={() => setSportPickerOpen(false)} />
       <BottomNav />
     </div>
   );

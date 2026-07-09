@@ -5,6 +5,7 @@ import { Calendar, CalendarClock, Check, MessageCircle, Phone, Search, X } from 
 import type { User } from "firebase/auth";
 import { TopNav } from "@/components/site/TopNav";
 import { BottomNav } from "@/components/site/BottomNav";
+import { SportPickerSheet } from "@/components/site/SportPickerSheet";
 import { SlotPicker } from "@/components/site/SlotPicker";
 import {
   CLOSE_HOUR,
@@ -44,6 +45,7 @@ function MyBookings() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<SportsBooking[] | null>(null);
   const [adminPhone, setAdminPhone] = useState("+91 81214 03183");
+  const [sportPickerOpen, setSportPickerOpen] = useState(false);
 
   async function refresh(currentUser: User | null) {
     if (currentUser) {
@@ -160,13 +162,12 @@ function MyBookings() {
             <div className="rounded-3xl border border-dashed border-black/10 p-10 text-center">
               <Calendar className="mx-auto mb-3 h-8 w-8 text-black/30" />
               <p className="text-sm text-black/50">No bookings yet.</p>
-              <Link
-                to="/book/$sport"
-                params={{ sport: "box_cricket" }}
+              <button
+                onClick={() => setSportPickerOpen(true)}
                 className="mt-4 inline-block rounded-full bg-prime px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-white"
               >
                 Book a slot
-              </Link>
+              </button>
             </div>
           )}
           {rows && rows.length > 0 && (
@@ -183,6 +184,7 @@ function MyBookings() {
           )}
         </div>
       </div>
+      <SportPickerSheet open={sportPickerOpen} onClose={() => setSportPickerOpen(false)} />
       <BottomNav />
     </div>
   );

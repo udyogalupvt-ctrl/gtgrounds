@@ -10,6 +10,7 @@ import {
   LogOut,
   Image as ImageIcon,
   Users,
+  UserPlus,
   IndianRupee,
   CalendarClock,
   MessageSquare,
@@ -20,6 +21,9 @@ import {
   Send,
   Sparkles,
   Wallet,
+  Mail,
+  Phone,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
@@ -66,6 +70,11 @@ import {
   signInWithEmail,
   signInWithGoogle,
   signOutFirebase,
+  subscribeAllUsers,
+  disableUserProfile,
+  enableUserProfile,
+  deleteUserProfile,
+  type RegisteredUser,
 } from "@/lib/firebase";
 import { enableAdminPushNotifications } from "@/lib/push-notifications";
 import {
@@ -101,7 +110,7 @@ function AdminDashboard() {
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [tab, setTab] = useState<
-    "sports" | "events" | "gallery" | "announcements" | "chats" | "rewards" | "payment" | "pricing"
+    "sports" | "events" | "gallery" | "announcements" | "chats" | "rewards" | "payment" | "pricing" | "users"
   >("sports");
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
   const [inquiries, setInquiries] = useState<FunctionInquiry[]>([]);
@@ -132,6 +141,8 @@ function AdminDashboard() {
   const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
   const [savingVenue, setSavingVenue] = useState(false);
   const [adminQrPreview, setAdminQrPreview] = useState<string | null>(null);
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
+  const [usersQuery, setUsersQuery] = useState("");
 
   useEffect(() => {
     let unsubscribe: undefined | (() => void);
@@ -212,7 +223,15 @@ function AdminDashboard() {
       .then(setVenue)
       .catch(() => {});
 
-    return () => unsub?.();
+    let unsubUsers: undefined | (() => void);
+    subscribeAllUsers(setRegisteredUsers, (e) => toast.error(e.message)).then((fn) => {
+      unsubUsers = fn;
+    });
+
+    return () => {
+      unsub?.();
+      unsubUsers?.();
+    };
   }, [isAdmin]);
 
   // Live QR preview for the admin (no amount — a generic "pay us" code).
@@ -444,8 +463,9 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
       revenue,
       pending,
       inquiries: inquiries.filter((i) => i.status === "pending").length,
+      users: registeredUsers.length,
     };
-  }, [bookings, inquiries]);
+  }, [bookings, inquiries, registeredUsers]);
 
   const filtered = useMemo(() => {
     return bookings.filter((b) => {
@@ -565,11 +585,12 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
       </header>
 
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <StatCard icon={CalendarClock} label="Today" value={String(stats.todays)} />
           <StatCard icon={Users} label="Pending" value={String(stats.pending)} accent />
           <StatCard icon={IndianRupee} label="Revenue" value={formatINR(stats.revenue)} />
           <StatCard icon={MessageSquare} label="Inquiries" value={String(stats.inquiries)} />
+          <StatCard icon={UserPlus} label="Users" value={String(stats.users)} />
         </div>
 
         <div className="mt-8 flex gap-2 overflow-x-auto border-b border-black/5">
@@ -577,6 +598,7 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
             [
               "sports",
               "events",
+              "users",
               "chats",
               "gallery",
               "announcements",
@@ -594,17 +616,19 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                 ? "Sports Bookings"
                 : t === "events"
                   ? "Event Inquiries"
-                  : t === "gallery"
-                    ? "Gallery"
-                    : t === "chats"
-                      ? "Chats"
-                      : t === "rewards"
-                        ? "Rewards"
-                        : t === "pricing"
-                          ? "Pricing & Holds"
-                          : t === "payment"
-                            ? "Payment"
-                            : "Announcements"}
+                  : t === "users"
+                    ? "Users"
+                    : t === "gallery"
+                      ? "Gallery"
+                      : t === "chats"
+                        ? "Chats"
+                        : t === "rewards"
+                          ? "Rewards"
+                          : t === "pricing"
+                            ? "Pricing & Holds"
+                            : t === "payment"
+                              ? "Payment"
+                              : "Announcements"}
               {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-prime" />}
             </button>
           ))}
@@ -767,6 +791,149 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {tab === "users" && (
+          <div className="mt-6">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-extrabold">Registered Users</h2>
+                <span className="rounded-full bg-prime px-3 py-1 text-xs font-bold text-white">
+                  {registeredUsers.length}
+                </span>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                <input
+                  value={usersQuery}
+                  onChange={(e) => setUsersQuery(e.target.value)}
+                  placeholder="Search name, email, phone"
+                  className="w-full rounded-xl border border-black/10 bg-white py-2.5 pl-10 pr-4 text-sm focus:border-prime focus:outline-none sm:w-72"
+                />
+              </div>
+            </div>
+
+            {registeredUsers.length === 0 ? (
+              <div className="rounded-2xl bg-white p-10 text-center">
+                <UserPlus className="mx-auto mb-3 h-8 w-8 text-black/20" />
+                <p className="text-sm text-black/50">No registered users yet.</p>
+                <p className="mt-1 text-xs text-black/40">
+                  Users will appear here when they sign up on the site.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {registeredUsers
+                  .filter((u) => {
+                    if (!usersQuery.trim()) return true;
+                    const q = usersQuery.toLowerCase();
+                    return (
+                      u.fullName.toLowerCase().includes(q) ||
+                      u.email.toLowerCase().includes(q) ||
+                      u.phone.includes(q)
+                    );
+                  })
+                  .map((u) => {
+                    const waPhone = u.phone
+                      .replace(/[^0-9]/g, "")
+                      .replace(/^(?!91)/, "91");
+                    const registeredDate = u.createdAt
+                      ? new Date(u.createdAt).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : "—";
+                    const registeredTime = u.createdAt
+                      ? new Date(u.createdAt).toLocaleTimeString("en-IN", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "";
+
+                    return (
+                      <div
+                        key={u.uid}
+                        className="rounded-2xl border border-black/5 bg-white p-4"
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Avatar */}
+                          {u.photoURL ? (
+                            <img
+                              src={u.photoURL}
+                              alt={u.fullName}
+                              className="size-11 shrink-0 rounded-full object-cover ring-1 ring-black/5"
+                            />
+                          ) : (
+                            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-sport/20 text-prime">
+                              <span className="text-sm font-black">
+                                {(u.fullName || u.email).charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* User info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate font-bold">
+                                {u.fullName || "—"}
+                              </p>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                  u.provider === "google.com"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-black/5 text-black/50"
+                                }`}
+                              >
+                                {u.provider === "google.com" ? "Google" : "Email"}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/50">
+                              <span className="inline-flex items-center gap-1">
+                                <Mail className="h-3 w-3" /> {u.email || "—"}
+                              </span>
+                              {u.phone && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Phone className="h-3 w-3" /> {u.phone}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1.5 text-[10px] font-bold uppercase tracking-widest text-black/30">
+                              Registered {registeredDate}
+                              {registeredTime ? ` at ${registeredTime}` : ""}
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex shrink-0 gap-1.5">
+                            {u.phone && (
+                              <>
+                                <a
+                                  href={`https://wa.me/${waPhone}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="grid size-9 place-items-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
+                                  title="WhatsApp"
+                                >
+                                  <MessageSquare className="h-4 w-4" />
+                                </a>
+                                <a
+                                  href={`tel:${u.phone.replace(/\s+/g, "")}`}
+                                  className="grid size-9 place-items-center rounded-lg bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100"
+                                  title="Call"
+                                >
+                                  <Phone className="h-4 w-4" />
+                                </a>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         )}
 
