@@ -116,6 +116,14 @@ export async function signUpWithEmail(
 export async function signInWithEmail(email: string, password: string) {
   const auth = await getFirebaseAuth();
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  
+  const db = await getFirebaseDb();
+  const snap = await getDoc(doc(db, "userProfiles", credential.user.uid));
+  if (snap.exists() && snap.data().disabled) {
+    await signOut(auth);
+    throw new Error("This account has been disabled.");
+  }
+
   await upsertUserProfile(credential.user);
   return credential.user;
 }
@@ -126,6 +134,14 @@ export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   const credential = await signInWithPopup(auth, provider);
+  
+  const db = await getFirebaseDb();
+  const snap = await getDoc(doc(db, "userProfiles", credential.user.uid));
+  if (snap.exists() && snap.data().disabled) {
+    await signOut(auth);
+    throw new Error("This account has been disabled.");
+  }
+
   const isNew = getAdditionalUserInfo(credential)?.isNewUser ?? false;
   await upsertUserProfile(credential.user);
   return { user: credential.user, isNew };

@@ -24,6 +24,8 @@ import {
   Mail,
   Phone,
   Search,
+  Ban,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
@@ -855,7 +857,7 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                     return (
                       <div
                         key={u.uid}
-                        className="rounded-2xl border border-black/5 bg-white p-4"
+                        className={`rounded-2xl border border-black/5 bg-white p-4 transition-opacity ${u.disabled ? "opacity-50 grayscale" : ""}`}
                       >
                         <div className="flex items-start gap-3">
                           {/* Avatar */}
@@ -876,9 +878,14 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                           {/* User info */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="truncate font-bold">
+                              <p className={`truncate font-bold ${u.disabled ? "line-through" : ""}`}>
                                 {u.fullName || "—"}
                               </p>
+                              {u.disabled && (
+                                <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-700">
+                                  Disabled
+                                </span>
+                              )}
                               <span
                                 className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
                                   u.provider === "google.com"
@@ -927,6 +934,43 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                                 </a>
                               </>
                             )}
+                            <div className="h-9 w-px bg-black/10 mx-1" />
+                            {u.disabled ? (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Enable access for ${u.fullName || u.email}?`)) {
+                                    enableUserProfile(u.uid).then(() => toast.success("User enabled")).catch((e) => toast.error(e.message));
+                                  }
+                                }}
+                                className="grid size-9 place-items-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
+                                title="Enable User"
+                              >
+                                <UserCheck className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Disable access for ${u.fullName || u.email}? They won't be able to log in.`)) {
+                                    disableUserProfile(u.uid).then(() => toast.success("User disabled")).catch((e) => toast.error(e.message));
+                                  }
+                                }}
+                                className="grid size-9 place-items-center rounded-lg bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                                title="Disable User"
+                              >
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                if (confirm(`Permanently delete ${u.fullName || u.email}? This cannot be undone.`)) {
+                                  deleteUserProfile(u.uid).then(() => toast.success("User deleted")).catch((e) => toast.error(e.message));
+                                }
+                              }}
+                              className="grid size-9 place-items-center rounded-lg bg-red-50 text-red-600 transition-colors hover:bg-red-100"
+                              title="Delete User"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </div>
                       </div>
