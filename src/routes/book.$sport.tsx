@@ -174,7 +174,18 @@ function BookingPage() {
     setLoadingSlots(true);
     getAvailability(sport, date)
       .then((rows) => {
-        if (!cancelled) setBookings(rows);
+        if (!cancelled) {
+          setBookings(rows);
+          const occ = occupiedHours(rows);
+          setStartHour((prev) => {
+            if (occ.has(prev)) {
+              const next = Math.min(CLOSE_HOUR - 1, prev + 1);
+              setEndHour(Math.min(CLOSE_HOUR, next + 1));
+              return next;
+            }
+            return prev;
+          });
+        }
       })
       .catch((error) => toast.error(error.message ?? "Could not load slots"))
       .finally(() => {

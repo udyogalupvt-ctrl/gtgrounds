@@ -25,8 +25,8 @@ const HOLD_MINUTES = 5;
 
 export const HOLD_MINUTES_LABEL = `${HOLD_MINUTES} minutes`;
 
-function holdDocId(sport: SportSlug, bookingDate: string, hour: number) {
-  return `${sport}_${bookingDate}_${hour}`;
+function holdDocId(bookingDate: string, hour: number) {
+  return `hold_${bookingDate}_${hour}`;
 }
 
 /** Anonymous per-tab-session id so a customer never blocks themselves. */
@@ -66,7 +66,7 @@ export async function acquireSlotHold(
   await runTransaction(db, async (tx) => {
     const hours: number[] = [];
     for (let h = startHour; h < endHour; h++) hours.push(h);
-    const refs = hours.map((h) => doc(db, "slotHolds", holdDocId(sport, bookingDate, h)));
+    const refs = hours.map((h) => doc(db, "slotHolds", holdDocId(bookingDate, h)));
     const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
     for (const snap of snaps) {
       if (snap.exists() && isActiveForeignHold(snap.data(), session)) {
@@ -93,7 +93,7 @@ export async function releaseSlotHold(
     const session = getHoldSessionId();
     const tasks: Promise<void>[] = [];
     for (let h = startHour; h < endHour; h++) {
-      const ref = doc(db, "slotHolds", holdDocId(sport, bookingDate, h));
+      const ref = doc(db, "slotHolds", holdDocId(bookingDate, h));
       tasks.push(
         getDoc(ref)
           .then((snap) => {
@@ -119,7 +119,6 @@ export async function getForeignHeldHours(
   const snapshot = await getDocs(
     query(
       collection(db, "slotHolds"),
-      where("sport", "==", sport),
       where("bookingDate", "==", bookingDate),
     ),
   );
@@ -142,7 +141,6 @@ export async function subscribeForeignHeldHours(
   return onSnapshot(
     query(
       collection(db, "slotHolds"),
-      where("sport", "==", sport),
       where("bookingDate", "==", bookingDate),
     ),
     (snapshot) => {

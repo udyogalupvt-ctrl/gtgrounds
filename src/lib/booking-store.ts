@@ -176,7 +176,6 @@ export async function getAvailability(sport: SportSlug, bookingDate: string) {
   const snapshot = await getDocs(
     query(
       collection(db, "sportsBookings"),
-      where("sport", "==", sport),
       where("bookingDate", "==", bookingDate),
     ),
   );

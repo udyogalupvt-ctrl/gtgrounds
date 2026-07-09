@@ -60,7 +60,7 @@ function LandingPage() {
   const nowHour = currentHourIST();
   const [quickSport, setQuickSport] = useState<keyof typeof SPORTS>("box_cricket");
   const [quickStart, setQuickStart] = useState(Math.min(23, Math.max(nowHour, 6)));
-  const [quickEnd, setQuickEnd] = useState(Math.min(24, Math.max(nowHour, 6) + 2));
+  const [quickEnd, setQuickEnd] = useState(Math.min(24, Math.max(nowHour, 6) + 1));
   const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
   const [venueLoaded, setVenueLoaded] = useState(false);
   const [quickOccupied, setQuickOccupied] = useState<Set<number>>(new Set());
@@ -80,7 +80,18 @@ function LandingPage() {
     setSlotsLoading(true);
     getAvailability(quickSport, today)
       .then((rows) => {
-        if (!cancelled) setQuickOccupied(occupiedHours(rows));
+        if (!cancelled) {
+          const occ = occupiedHours(rows);
+          setQuickOccupied(occ);
+          setQuickStart((prev) => {
+            if (occ.has(prev)) {
+              const next = Math.min(23, prev + 1);
+              setQuickEnd(Math.min(24, next + 1));
+              return next;
+            }
+            return prev;
+          });
+        }
       })
       .catch(() => {})
       .finally(() => {

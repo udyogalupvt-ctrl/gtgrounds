@@ -29,13 +29,17 @@ export function AdminTodaySlots({ bookings, prices }: Props) {
 
   const perSport = useMemo(() => {
     const map = {} as Record<SportSlug, { occupied: Set<number>; labels: Map<number, string> }>;
-    for (const slug of Object.keys(SPORTS) as SportSlug[]) {
-      const todays = bookings.filter((b) => b.sport === slug && b.bookingDate === today);
-      const labels = new Map<number, string>();
-      for (const b of todays) {
-        for (let h = b.startHour; h < b.endHour; h++) labels.set(h, b.customerName || "Booked");
+    const todaysAll = bookings.filter((b) => b.bookingDate === today);
+    const occupiedAll = occupiedHours(todaysAll);
+    const labelsAll = new Map<number, string>();
+    for (const b of todaysAll) {
+      for (let h = b.startHour; h < b.endHour; h++) {
+        labelsAll.set(h, `${b.customerName || "Booked"} (${SPORTS[b.sport].name})`);
       }
-      map[slug] = { occupied: occupiedHours(todays), labels };
+    }
+
+    for (const slug of Object.keys(SPORTS) as SportSlug[]) {
+      map[slug] = { occupied: occupiedAll, labels: labelsAll };
     }
     return map;
   }, [bookings, today]);
