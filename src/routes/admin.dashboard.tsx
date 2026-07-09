@@ -26,6 +26,7 @@ import {
   Search,
   Ban,
   UserCheck,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
