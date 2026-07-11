@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import {
   Banknote,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   XCircle,
   LogOut,
   Image as ImageIcon,
@@ -116,6 +118,7 @@ function AdminDashboard() {
   const [tab, setTab] = useState<
     "sports" | "events" | "gallery" | "announcements" | "chats" | "rewards" | "payment" | "pricing" | "users"
   >("sports");
+  const [statsExpanded, setStatsExpanded] = useState(true);
   const [bookings, setBookings] = useState<SportsBooking[]>([]);
   const [inquiries, setInquiries] = useState<FunctionInquiry[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
@@ -146,6 +149,7 @@ function AdminDashboard() {
   const [adminQrPreview, setAdminQrPreview] = useState<string | null>(null);
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
   const [usersQuery, setUsersQuery] = useState("");
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribe: undefined | (() => void);
@@ -162,6 +166,10 @@ function AdminDashboard() {
     }
     setIsAdmin(isAdminEmail(session.email));
   }, [session]);
+
+  useEffect(() => {
+    setStatsExpanded(tab === "sports");
+  }, [tab]);
 
   // Live bookings & inquiries — update the dashboard the instant a customer
   // books or submits payment, no refresh needed. Gallery/announcements are
@@ -568,53 +576,93 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
       </header>
 
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          <StatCard icon={CalendarClock} label="Today" value={String(stats.todays)} />
-          <StatCard icon={Users} label="Pending" value={String(stats.pending)} accent />
-          <StatCard icon={IndianRupee} label="Revenue" value={formatINR(stats.revenue)} />
-          <StatCard icon={MessageSquare} label="Inquiries" value={String(stats.inquiries)} />
-          <StatCard icon={UserPlus} label="Users" value={String(stats.users)} />
+        <div className="mb-4 flex items-center justify-between sm:hidden">
+          <h2 className="text-sm font-extrabold uppercase tracking-wider text-black/60">Overview</h2>
+          <button
+            onClick={() => setStatsExpanded(!statsExpanded)}
+            className="flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs font-bold transition-colors hover:bg-black/10"
+          >
+            {statsExpanded ? "Hide" : "Show"}
+            <ChevronDown className={`h-4 w-4 transition-transform ${statsExpanded ? "rotate-180" : ""}`} />
+          </button>
         </div>
+        
+        {statsExpanded && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <StatCard icon={CalendarClock} label="Today" value={String(stats.todays)} />
+            <StatCard icon={Users} label="Pending" value={String(stats.pending)} accent />
+            <StatCard icon={IndianRupee} label="Revenue" value={formatINR(stats.revenue)} />
+            <StatCard icon={MessageSquare} label="Inquiries" value={String(stats.inquiries)} />
+            <StatCard icon={UserPlus} label="Users" value={String(stats.users)} />
+          </div>
+        )}
 
-        <div className="mt-8 flex gap-2 overflow-x-auto border-b border-black/5">
-          {(
-            [
-              "sports",
-              "events",
-              "users",
-              "chats",
-              "gallery",
-              "announcements",
-              "pricing",
-              "payment",
-              "rewards",
-            ] as const
-          ).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`relative -mb-px whitespace-nowrap px-4 py-3 text-sm font-bold uppercase tracking-wider ${tab === t ? "text-prime" : "text-black/40"}`}
-            >
-              {t === "sports"
-                ? "Sports Bookings"
-                : t === "events"
-                  ? "Event Inquiries"
-                  : t === "users"
-                    ? "Users"
-                    : t === "gallery"
-                      ? "Gallery"
-                      : t === "chats"
-                        ? "Chats"
-                        : t === "rewards"
-                          ? "Rewards"
-                          : t === "pricing"
-                            ? "Pricing & Holds"
-                            : t === "payment"
-                              ? "Payment"
-                              : "Announcements"}
-              {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-prime" />}
-            </button>
-          ))}
+        <div className="mt-8 border-b border-black/5">
+          {/* Mobile Select Menu */}
+          <div className="mb-4 sm:hidden">
+            <div className="relative">
+              <select
+                value={tab}
+                onChange={(e) => setTab(e.target.value as any)}
+                className="w-full appearance-none rounded-2xl border border-black/10 bg-white px-4 py-3.5 text-sm font-extrabold uppercase tracking-wider text-prime focus:border-prime focus:outline-none"
+              >
+                <option value="sports">Sports Bookings</option>
+                <option value="events">Event Inquiries</option>
+                <option value="users">Users</option>
+                <option value="chats">Chats</option>
+                <option value="gallery">Gallery</option>
+                <option value="announcements">Announcements</option>
+                <option value="pricing">Pricing & Holds</option>
+                <option value="payment">Payment</option>
+                <option value="rewards">Rewards</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                <ChevronDown className="h-5 w-5 text-black/40" />
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Tabs */}
+          <div className="hidden gap-2 overflow-x-auto sm:flex">
+            {(
+              [
+                "sports",
+                "events",
+                "users",
+                "chats",
+                "gallery",
+                "announcements",
+                "pricing",
+                "payment",
+                "rewards",
+              ] as const
+            ).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`relative -mb-px whitespace-nowrap px-4 py-3 text-sm font-bold uppercase tracking-wider ${tab === t ? "text-prime" : "text-black/40"}`}
+              >
+                {t === "sports"
+                  ? "Sports Bookings"
+                  : t === "events"
+                    ? "Event Inquiries"
+                    : t === "users"
+                      ? "Users"
+                      : t === "gallery"
+                        ? "Gallery"
+                        : t === "chats"
+                          ? "Chats"
+                          : t === "rewards"
+                            ? "Rewards"
+                            : t === "pricing"
+                              ? "Pricing & Holds"
+                              : t === "payment"
+                                ? "Payment"
+                                : "Announcements"}
+                {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-prime" />}
+              </button>
+            ))}
+          </div>
         </div>
 
         {tab === "sports" && (
@@ -836,12 +884,18 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                         })
                       : "";
 
+                    const userBookings = bookings.filter(b => b.userId === u.uid || (u.phone && b.customerPhone === u.phone));
+                    const isExpanded = expandedUser === u.uid;
+
                     return (
                       <div
                         key={u.uid}
-                        className={`rounded-2xl border border-black/5 bg-white p-4 transition-opacity ${u.disabled ? "opacity-50 grayscale" : ""}`}
+                        className={`overflow-hidden rounded-2xl border border-black/5 bg-white transition-all hover:border-black/10 hover:shadow-sm ${u.disabled ? "opacity-50 grayscale" : ""}`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div 
+                          className="flex cursor-pointer items-start gap-3 p-4"
+                          onClick={() => setExpandedUser(isExpanded ? null : u.uid)}
+                        >
                           {/* Avatar */}
                           {u.photoURL ? (
                             <img
@@ -850,7 +904,7 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                               className="size-11 shrink-0 rounded-full object-cover ring-1 ring-black/5"
                             />
                           ) : (
-                            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-sport/20 text-prime">
+                            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-prime/10 text-prime">
                               <span className="text-sm font-black">
                                 {(u.fullName || u.email).charAt(0).toUpperCase()}
                               </span>
@@ -888,14 +942,23 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                                 </span>
                               )}
                             </div>
-                            <p className="mt-1.5 text-[10px] font-bold uppercase tracking-widest text-black/30">
-                              Registered {registeredDate}
-                              {registeredTime ? ` at ${registeredTime}` : ""}
-                            </p>
+                            <div className="mt-2 flex items-center justify-between">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-black/30">
+                                Registered {registeredDate}
+                                {registeredTime ? ` at ${registeredTime}` : ""}
+                              </p>
+                              <span className="flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-bold text-black/50">
+                                {userBookings.length} Bookings
+                                <ChevronDown className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              </span>
+                            </div>
                           </div>
 
                           {/* Actions */}
-                          <div className="flex shrink-0 gap-1.5">
+                          <div 
+                            className="flex shrink-0 gap-1.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             {u.phone && (
                               <>
                                 <a
@@ -955,6 +1018,34 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                             </button>
                           </div>
                         </div>
+
+                        {/* Expanded Bookings Area */}
+                        {isExpanded && (
+                          <div className="border-t border-black/5 bg-black/[0.02] p-4 text-sm">
+                            {userBookings.length === 0 ? (
+                              <p className="text-center text-xs text-black/40">No bookings found for this user.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {userBookings.map((b) => (
+                                  <div key={b.id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+                                    <div>
+                                      <p className="font-bold text-black/80">{SPORTS[b.sport].name}</p>
+                                      <p className="text-xs text-black/50">
+                                        {formatDateShort(b.bookingDate)} · {formatHour(b.startHour)}–{formatHour(b.endHour)}
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-bold text-black/80">{formatINR(b.totalAmount)}</p>
+                                      <span className={`text-[9px] font-bold uppercase tracking-widest ${statusColor(b.status)}`}>
+                                        {statusLabel(b.status)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ChevronDown } from "lucide-react";
 import { adminCreateBooking, occupiedHours, type SportsBooking } from "@/lib/booking-store";
 import { SPORTS, SportSlug, currentHourIST, formatHour, formatINR, todayIsoIST } from "@/lib/venue";
 
@@ -26,6 +27,7 @@ export function AdminTodaySlots({ bookings, prices }: Props) {
   const [phone, setPhone] = useState("");
   const [endHour, setEndHour] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const perSport = useMemo(() => {
     const map = {} as Record<SportSlug, { occupied: Set<number>; labels: Map<number, string> }>;
@@ -84,15 +86,25 @@ export function AdminTodaySlots({ bookings, prices }: Props) {
   }
 
   return (
-    <div className="mb-6 rounded-2xl border border-black/5 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-extrabold uppercase tracking-wider">Today's slots</h3>
-        <span className="text-[11px] font-medium text-black/40">
-          Tap a free slot to book a walk-in
-        </span>
-      </div>
+    <div className="mb-6 rounded-2xl border border-black/5 bg-white">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex w-full items-center justify-between p-4"
+      >
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-extrabold uppercase tracking-wider">Today's slots</h3>
+          <span className="hidden text-[11px] font-medium text-black/40 sm:block">
+            Tap a free slot to book a walk-in
+          </span>
+        </div>
+        <ChevronDown
+          className={`h-5 w-5 text-black/40 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+        />
+      </button>
 
-      <div className="space-y-4">
+      {isExpanded && (
+        <div className="px-4 pb-4">
+          <div className="space-y-4">
         {(Object.keys(SPORTS) as SportSlug[]).map((slug) => {
           const { occupied, labels } = perSport[slug];
           return (
@@ -190,6 +202,8 @@ export function AdminTodaySlots({ bookings, prices }: Props) {
               Cancel
             </button>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>
