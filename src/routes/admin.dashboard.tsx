@@ -765,7 +765,7 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
                         <XCircle className="h-3 w-3" /> Reject
                       </button>
                     )}
-                    {b.status === "approved" && (
+                    {(b.status === "approved" || b.status === "completed") && (
                       <a
                         href={whatsappLink(b)}
                         target="_blank"
