@@ -3,8 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Banknote,
-  Bell,
-  BellRing,
   CheckCircle2,
   XCircle,
   LogOut,
@@ -92,6 +90,7 @@ import { buildUpiUri, generateUpiQr } from "@/lib/upi";
 import {
   SPORTS,
   SportSlug,
+  currentHourIST,
   formatDateFull,
   formatDateLong,
   formatDateShort,
@@ -142,7 +141,6 @@ function AdminDashboard() {
   const [savingRewards, setSavingRewards] = useState(false);
   const [payment, setPayment] = useState<PaymentSettings | null>(null);
   const [savingPayment, setSavingPayment] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(false);
   const [venue, setVenue] = useState<VenueConfig>(defaultVenueConfig);
   const [savingVenue, setSavingVenue] = useState(false);
   const [adminQrPreview, setAdminQrPreview] = useState<string | null>(null);
@@ -173,7 +171,18 @@ function AdminDashboard() {
     loadContent();
     let unsubBookings: undefined | (() => void);
     let unsubInquiries: undefined | (() => void);
-    subscribeAdminBookings(setBookings, (e) => toast.error(e.message)).then((fn) => {
+    subscribeAdminBookings((newBookings) => {
+      setBookings(newBookings);
+      const today = todayIsoIST();
+      const nowHour = currentHourIST();
+      newBookings.forEach((b) => {
+        if (b.status === "approved") {
+          if (b.bookingDate < today || (b.bookingDate === today && b.endHour <= nowHour)) {
+            updateBookingStatus(b.id, "completed").catch(() => {});
+          }
+        }
+      });
+    }, (e) => toast.error(e.message)).then((fn) => {
       unsubBookings = fn;
     });
     subscribeAdminInquiries(setInquiries).then((fn) => {
@@ -185,32 +194,13 @@ function AdminDashboard() {
     };
   }, [isAdmin]);
 
-  // If this browser already granted notification permission, silently refresh
-  // its push token so admin alerts keep working after token rotation.
+  // Request notification permissions once on admin login
   useEffect(() => {
     if (!isAdmin || !session) return;
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (typeof Notification === "undefined") return;
     enableAdminPushNotifications({ uid: session.uid, email: session.email })
-      .then((result) => setPushEnabled(result === "enabled"))
       .catch(() => {});
   }, [isAdmin, session]);
-
-  async function enablePush() {
-    if (!session) return;
-    try {
-      const result = await enableAdminPushNotifications({ uid: session.uid, email: session.email });
-      if (result === "enabled") {
-        setPushEnabled(true);
-        toast.success("Booking alerts enabled on this device");
-      } else if (result === "denied") {
-        toast.error("Notifications are blocked. Allow them in your browser's site settings.");
-      } else {
-        toast.error("This browser does not support push notifications.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not enable notifications");
-    }
-  }
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -567,18 +557,6 @@ Please arrive 10 minutes early. Contact: +91 81214 03183 / +91 84998 17867`;
             <h1 className="text-lg font-extrabold">GT Grounds Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={enablePush}
-              className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${pushEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-black/10 bg-white text-black/60"}`}
-              title={
-                pushEnabled
-                  ? "Booking alerts are on for this device"
-                  : "Get a push notification when a booking is submitted"
-              }
-            >
-              {pushEnabled ? <BellRing className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-              {pushEnabled ? "Alerts on" : "Enable alerts"}
-            </button>
             <button
               onClick={signOut}
               className="flex items-center gap-1 text-xs font-bold text-black/60"
